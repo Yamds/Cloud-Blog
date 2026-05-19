@@ -106,10 +106,11 @@ interface ImageNodeContext {
 interface HoveredImageContext extends ImageNodeContext {
   top: number;
   left: number;
-  maxWidth: number;
+  width: number;
+  canConvert: boolean;
 }
 
-const hoveredExternalImage = ref<HoveredImageContext | null>(null);
+const hoveredImage = ref<HoveredImageContext | null>(null);
 
 interface EditorSnapshotSource {
   getJSON: () => unknown;
@@ -338,7 +339,7 @@ const stickyHeaderStyle = computed(() => ({
 }));
 
 const hoverConvertButtonStyle = computed(() => {
-  const target = hoveredExternalImage.value;
+  const target = hoveredImage.value;
 
   if (!target) {
     return {};
@@ -347,9 +348,12 @@ const hoverConvertButtonStyle = computed(() => {
   return {
     top: `${target.top}px`,
     left: `${target.left}px`,
-    maxWidth: `${target.maxWidth}px`,
+    width: `${target.width}px`,
+    maxWidth: `${target.width}px`,
   };
 });
+
+const hoveredImageCanConvert = computed(() => Boolean(hoveredImage.value?.canConvert));
 
 function trackEditorRevision(): number {
   return editorRevision.value;
@@ -1147,10 +1151,14 @@ async function uploadAndInsertImage(file: File): Promise<void> {
   }
 }
 
-async function convertExternalImage(target: ImageNodeContext | null = hoveredExternalImage.value): Promise<void> {
+async function convertExternalImage(target: ImageNodeContext | null = hoveredImage.value): Promise<void> {
   const currentEditor = editor.value;
 
   if (!currentEditor || !target || imageOperationPending.value) {
+    return;
+  }
+
+  if (!isExternalImageUrl(target.src)) {
     return;
   }
 
@@ -1172,7 +1180,7 @@ async function convertExternalImage(target: ImageNodeContext | null = hoveredExt
       src: uploaded.url,
       alt: target.alt,
     });
-    hoveredExternalImage.value = null;
+    hoveredImage.value = null;
     syncDraftFromEditor(currentEditor);
     scheduleAutosave();
     saveError.value = "";
@@ -1219,40 +1227,49 @@ function handleEditorMouseMove(event: MouseEvent): void {
   const imageElement = target?.closest("img");
 
   if (!(imageElement instanceof HTMLImageElement) || !wrap.contains(imageElement)) {
-    hoveredExternalImage.value = null;
+    hoveredImage.value = null;
     return;
   }
 
   const src = imageElement.getAttribute("src")?.trim() ?? imageElement.currentSrc.trim();
 
-  if (!isExternalImageUrl(src)) {
-    hoveredExternalImage.value = null;
+  if (!src) {
+    hoveredImage.value = null;
     return;
   }
 
   const rect = imageElement.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
-  const horizontalPadding = 8;
-  const maxWidth = Math.max(Math.min(wrap.clientWidth - horizontalPadding * 2, 360), 220);
-  const buttonWidth = Math.min(220, maxWidth);
-  const left = Math.min(
-    Math.max(rect.right - wrapRect.left - buttonWidth, horizontalPadding),
-    Math.max(wrap.clientWidth - buttonWidth - horizontalPadding, horizontalPadding),
-  );
-  const top = Math.max(rect.top - wrapRect.top + 8, horizontalPadding);
+  const inset = 10;
+  const leftBoundary = Math.max(rect.left - wrapRect.left + inset, inset);
+  const rightBoundary = Math.min(rect.right - wrapRect.left - inset, wrapRect.width - inset);
+  const availableWidth = Math.max(rightBoundary - leftBoundary, 0);
 
-  hoveredExternalImage.value = {
+  if (availableWidth < 80) {
+    hoveredImage.value = null;
+    return;
+  }
+
+  const desiredWidth = availableWidth;
+  const left = leftBoundary;
+  const width = Math.max(rightBoundary - left, 80);
+  const topBoundary = rect.top - wrapRect.top + inset;
+  const bottomBoundary = rect.bottom - wrapRect.top - 36 - inset;
+  const top = Math.max(Math.min(topBoundary, bottomBoundary), inset);
+
+  hoveredImage.value = {
     src,
     alt: imageElement.getAttribute("alt")?.trim() ?? "",
     pos: currentEditor.view.posAtDOM(imageElement, 0),
     top,
     left,
-    maxWidth,
+    width,
+    canConvert: isExternalImageUrl(src),
   };
 }
 
 function clearHoveredExternalImage(): void {
-  hoveredExternalImage.value = null;
+  hoveredImage.value = null;
 }
 
 function updateStickyMetrics(): void {
@@ -1445,13 +1462,14 @@ watch(
               <button type="button" title="删除当前表格列" @click="runTableAction('deleteColumn')">删列</button>
             </div>
           </BubbleMenu>
-          <div v-if="hoveredExternalImage" class="image-convert-float" :style="hoverConvertButtonStyle">
-            <span class="image-convert-url" :title="hoveredExternalImage.src">{{ hoveredExternalImage.src }}</span>
+          <div v-if="hoveredImage" class="image-convert-float" :style="hoverConvertButtonStyle">
+            <span class="image-convert-chip image-convert-url" :title="hoveredImage.src">{{ hoveredImage.src }}</span>
             <button
+              v-if="hoveredImageCanConvert"
               type="button"
-              class="image-convert-button"
+              class="image-convert-chip image-convert-button"
               :disabled="imageOperationPending"
-              @click="convertExternalImage(hoveredExternalImage)"
+              @click="convertExternalImage(hoveredImage)"
             >
               {{ imageConverting ? "转存中..." : "转存到媒体库" }}
             </button>
@@ -1487,15 +1505,15 @@ watch(
         </section>
         <section class="panel">
           <h3>访问链接</h3>
+          <p class="panel-help slug-prefix">https://blog.yamds.cafe/articles/</p>
           <label class="slug-input" aria-label="文章访问链接">
-            <span class="slug-prefix">https://blog.yamds.cafe/articles/</span>
             <input
               v-model="draft.slug"
               type="text"
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              placeholder="ceshi"
+              placeholder="文章名"
             />
           </label>
           <p class="panel-help">留空时会按标题自动生成 slug。</p>
@@ -1702,36 +1720,39 @@ watch(
 .image-convert-float {
   position: absolute;
   z-index: 9;
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
-  min-height: 36px;
-  padding: 4px 6px 4px 10px;
+  min-width: 0;
+  pointer-events: auto;
+}
+.image-convert-chip {
+  min-width: 0;
+  height: 32px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: color-mix(in oklab, var(--bg-elevated) 94%, transparent);
-  color: var(--text-primary);
-  font-size: 12px;
   box-shadow: 0 10px 26px color-mix(in oklab, var(--text-primary) 10%, transparent);
   backdrop-filter: blur(12px);
 }
 .image-convert-url {
-  min-width: 0;
-  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  padding: 0 12px;
   overflow: hidden;
   color: var(--text-secondary);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .image-convert-button {
   flex: 0 0 auto;
-  min-width: 96px;
-  height: 28px;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
+  padding: 0 12px;
   color: var(--text-secondary);
   font-size: 12px;
+  white-space: nowrap;
 }
 .image-convert-button:hover:enabled,
 .image-convert-button:focus-visible {
@@ -1740,30 +1761,21 @@ watch(
   color: var(--accent);
 }
 .slug-input {
-  display: flex;
-  align-items: stretch;
+  display: block;
   margin-top: var(--space-2);
-  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
 }
 .slug-prefix {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 0 var(--space-2);
-  border-right: 1px solid var(--border-subtle);
-  color: var(--text-tertiary);
-  font-size: 13px;
-  white-space: nowrap;
+  margin-top: 0;
 }
 .slug-input input {
-  flex: 1;
+  display: block;
+  width: 100%;
   min-width: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: inherit;
   background: transparent;
 }
 .slug-input:focus-within {

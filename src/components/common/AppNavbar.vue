@@ -14,8 +14,8 @@ const authStore = useAuthStore();
 const { isAdmin, isAuthenticated, isLoading, user } = storeToRefs(authStore);
 
 const publicLinks = [
-  { to: "/", label: "Home" },
-  { to: "/articles", label: "Articles" },
+  { to: "/", label: "首页" },
+  { to: "/articles", label: "文章" },
 ] as const;
 
 const isScrolled = ref(false);
@@ -156,7 +156,7 @@ watch(
 <template>
   <nav class="navbar" :class="{ 'is-home-top': isHomeTop }">
     <div class="nav-inner">
-      <RouterLink class="logo" to="/" title="Back to home">Yamds's Blog</RouterLink>
+      <RouterLink class="logo" to="/" title="返回首页">Yamds's Blog</RouterLink>
       <div class="nav-links">
         <template v-for="link in textLinks" :key="link.key">
           <RouterLink
@@ -195,13 +195,13 @@ watch(
             :href="userProfileUrl"
             target="_blank"
             rel="noreferrer"
-            :title="`Open ${userDisplayName}'s GitHub profile`"
+            :title="`${userDisplayName} 的 GitHub 主页`"
           >
             <img
               v-if="userAvatarUrl"
               class="auth-avatar"
               :src="userAvatarUrl"
-              :alt="`${userDisplayName} avatar`"
+              :alt="`${userDisplayName} 的头像`"
               width="28"
               height="28"
             />
@@ -210,13 +210,13 @@ watch(
             </span>
             <span class="auth-name">{{ userDisplayName }}</span>
           </a>
-          <button class="icon-button" type="button" title="Log out" aria-label="Log out" @click="handleLogout">
+          <button class="icon-button" type="button" title="登出" aria-label="登出" @click="handleLogout">
             <IconifyIcon icon="ph:sign-out" :size="18" />
           </button>
         </div>
         <button v-else class="login-link" type="button" :disabled="isLoading" @click="handleLogin">
           <IconifyIcon icon="ph:github-logo" :size="18" />
-          <span>{{ isLoading ? "Connecting..." : "GitHub Login" }}</span>
+          <span>{{ isLoading ? "连接中..." : "GitHub 登录" }}</span>
         </button>
         <ThemeToggle />
       </div>

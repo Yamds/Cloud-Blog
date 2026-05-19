@@ -52,7 +52,7 @@ async function loadSettings(): Promise<void> {
     const settings = await getCmsSiteSettings();
     applySettings(settings);
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "Failed to load settings.";
+    notice.value = isApiError(error) ? error.message : "加载设置失败。";
   } finally {
     loading.value = false;
   }
@@ -71,9 +71,9 @@ async function handleSubmit(): Promise<void> {
       navAction: { ...form.navAction },
     });
     applySettings(settings);
-    notice.value = "Settings saved.";
+    notice.value = "设置已保存。";
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "Failed to save settings.";
+    notice.value = isApiError(error) ? error.message : "保存设置失败。";
   } finally {
     saving.value = false;
   }
@@ -85,59 +85,57 @@ onMounted(() => {
 </script>
 
 <template>
-  <CmsShell title="Site Settings" subtitle="Manage public site metadata, feature flags, and navbar actions.">
+  <CmsShell title="站点设置" subtitle="管理公开站点信息、功能开关和导航栏按钮。">
     <p v-if="notice" class="notice">{{ notice }}</p>
 
     <form class="settings-form" :class="{ loading }" @submit.prevent="handleSubmit">
       <section class="settings-panel">
-        <h2>Basics</h2>
+        <h2>基础信息</h2>
         <label>
-          <span>Site name</span>
-          <input v-model="form.siteName" type="text" maxlength="80" placeholder="Yamds's Blog" />
+          <span>站点名称</span>
+          <input v-model="form.siteName" type="text" maxlength="80" placeholder="例如：Yamds 的博客" />
         </label>
         <label>
-          <span>Description</span>
+          <span>站点简介</span>
           <textarea
             v-model="form.siteDescription"
             maxlength="300"
             rows="4"
-            placeholder="Add a short intro for the public site."
+            placeholder="为公开站点添加一段简短介绍。"
           />
         </label>
       </section>
 
       <section class="settings-panel">
-        <h2>Features</h2>
+        <h2>功能开关</h2>
         <label class="switch-row">
           <input v-model="form.commentsEnabled" type="checkbox" />
           <span>
-            <strong>Enable comments</strong>
-            <small>Readers can still view existing comments when this is turned off.</small>
+            <strong>启用评论</strong>
+            <small>关闭后读者仍可查看已有评论。</small>
           </span>
         </label>
         <label class="switch-row">
           <input v-model="form.analyticsEnabled" type="checkbox" />
           <span>
-            <strong>Record analytics</strong>
-            <small>Pageview requests stay successful, but no new view records will be written.</small>
+            <strong>记录分析数据</strong>
+            <small>页面浏览请求仍会成功，但不会再写入新的浏览记录。</small>
           </span>
         </label>
       </section>
 
       <section class="settings-panel">
-        <h2>Navbar action</h2>
+        <h2>导航栏按钮</h2>
         <label class="switch-row">
           <input v-model="form.navAction.enabled" type="checkbox" />
           <span>
-            <strong>Enable custom button</strong>
-            <small>
-              Icon buttons appear left of the GitHub login control. Text buttons sit between Articles and CMS.
-            </small>
+            <strong>启用自定义按钮</strong>
+            <small>图标按钮显示在 GitHub 登录按钮左侧，文字按钮显示在文章与 CMS 之间。</small>
           </span>
         </label>
 
         <div class="option-group">
-          <span class="field-label">Button style</span>
+          <span class="field-label">按钮样式</span>
           <div class="segmented">
             <button
               type="button"
@@ -146,7 +144,7 @@ onMounted(() => {
               :aria-pressed="form.navAction.variant === 'icon'"
               @click="form.navAction.variant = 'icon'"
             >
-              Icon
+              图标
             </button>
             <button
               type="button"
@@ -155,13 +153,13 @@ onMounted(() => {
               :aria-pressed="form.navAction.variant === 'text'"
               @click="form.navAction.variant = 'text'"
             >
-              Text
+              文字
             </button>
           </div>
         </div>
 
         <div class="option-group">
-          <span class="field-label">Target</span>
+          <span class="field-label">跳转目标</span>
           <div class="segmented">
             <button
               type="button"
@@ -170,7 +168,7 @@ onMounted(() => {
               :aria-pressed="form.navAction.targetType === 'external'"
               @click="form.navAction.targetType = 'external'"
             >
-              External link
+              外部链接
             </button>
             <button
               type="button"
@@ -179,14 +177,14 @@ onMounted(() => {
               :aria-pressed="form.navAction.targetType === 'article'"
               @click="form.navAction.targetType = 'article'"
             >
-              Article
+              文章
             </button>
           </div>
         </div>
 
         <div v-if="form.navAction.variant === 'icon'" class="field-grid">
           <label>
-            <span>Iconify icon name</span>
+            <span>Iconify 图标名</span>
             <input
               v-model="form.navAction.iconName"
               type="text"
@@ -195,23 +193,23 @@ onMounted(() => {
             />
           </label>
           <label>
-            <span>Tooltip</span>
+            <span>提示文案</span>
             <input
               v-model="form.navAction.tooltip"
               type="text"
               maxlength="120"
-              placeholder="Open in a new tab"
+              placeholder="例如：在新标签页打开"
             />
           </label>
         </div>
 
         <label v-else>
-          <span>Button label</span>
-          <input v-model="form.navAction.label" type="text" maxlength="40" placeholder="About" />
+          <span>按钮文案</span>
+          <input v-model="form.navAction.label" type="text" maxlength="40" placeholder="例如：关于" />
         </label>
 
         <label v-if="form.navAction.targetType === 'external'">
-          <span>External URL</span>
+          <span>外部链接 URL</span>
           <input
             v-model="form.navAction.href"
             type="url"
@@ -220,20 +218,20 @@ onMounted(() => {
           />
         </label>
         <label v-else>
-          <span>Article slug or path</span>
+          <span>文章 slug 或路径</span>
           <input
             v-model="form.navAction.articlePath"
             type="text"
             maxlength="300"
-            placeholder="hello-world or /articles/hello-world"
+            placeholder="hello-world 或 /articles/hello-world"
           />
         </label>
       </section>
 
       <div class="form-actions">
-        <button type="button" class="text-action" :disabled="loading || saving" @click="loadSettings">Reload</button>
+        <button type="button" class="text-action" :disabled="loading || saving" @click="loadSettings">重新加载</button>
         <button type="submit" class="primary" :disabled="loading || saving">
-          {{ saving ? "Saving..." : "Save settings" }}
+          {{ saving ? "保存中..." : "保存设置" }}
         </button>
       </div>
     </form>

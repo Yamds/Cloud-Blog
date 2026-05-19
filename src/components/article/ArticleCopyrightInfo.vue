@@ -50,7 +50,7 @@ const displayAuthor = computed(() => props.article.authorName || "本站作者")
         <dd>
           转载或引用本文时请遵守
           <a class="meta-link" :href="LICENSE_URL" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a>
-          许可协议，注明出处、不得用于商业用途！
+          许可协议，注明出处，不得用于商业用途。
         </dd>
       </div>
       <div class="meta-row">
@@ -71,28 +71,28 @@ const displayAuthor = computed(() => props.article.authorName || "本站作者")
 
 <style scoped>
 .copyright-info {
-  margin: var(--space-8) 0 var(--space-10);
-  padding: var(--space-5) 0;
+  margin: var(--space-6) 0 var(--space-8);
+  padding: var(--space-4) 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 
 .title {
-  margin: 0 0 var(--space-4);
-  font-size: 18px;
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
   color: var(--text-primary);
 }
 
 .meta-list {
   margin: 0;
   display: grid;
-  gap: var(--space-3);
+  gap: 6px;
 }
 
 .meta-row {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
-  gap: var(--space-3);
+  gap: 10px;
   align-items: start;
 }
 
@@ -104,7 +104,7 @@ dt {
 dd {
   margin: 0;
   color: var(--text-secondary);
-  line-height: 1.75;
+  line-height: 1.6;
   word-break: break-word;
 }
 
@@ -125,7 +125,7 @@ time {
 @media (max-width: 640px) {
   .meta-row {
     grid-template-columns: 1fr;
-    gap: var(--space-1);
+    gap: 2px;
   }
 }
 </style>
