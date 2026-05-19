@@ -22,6 +22,7 @@ const articleLinkProps = computed(() =>
 );
 const articleLinkTag = computed(() => (articleLinkTarget.value ? RouterLink : "div"));
 const displayDate = computed(() => formatShanghaiDate(props.article.publishedAt));
+const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
 </script>
 
 <template>
@@ -34,7 +35,15 @@ const displayDate = computed(() => formatShanghaiDate(props.article.publishedAt)
         <footer class="article-footer">
           <time class="article-date" :datetime="article.publishedAt">{{ displayDate }}</time>
           <div class="article-tags">
-            <span v-for="tag in article.tags" :key="tag" class="tag">{{ tag }}</span>
+            <RouterLink
+              v-for="tag in article.tags"
+              :key="tag"
+              class="tag"
+              :to="getTagRoute(tag)"
+              @click.stop
+            >
+              {{ tag }}
+            </RouterLink>
           </div>
         </footer>
       </div>
@@ -144,19 +153,44 @@ const displayDate = computed(() => formatShanghaiDate(props.article.publishedAt)
 }
 
 .tag {
-  padding: 4px 12px;
-  border-radius: 4px;
-  background: var(--bg-elevated);
+  position: relative;
+  padding: 2px 0;
   font-size: 13px;
   color: var(--text-secondary);
-  transition:
-    background 0.2s ease,
-    color 0.2s ease;
+  text-decoration: none;
+  transition: color var(--transition-fast);
 }
 
-.tag:hover {
-  background: var(--accent);
-  color: var(--bg);
+.tag::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.tag:hover,
+.tag:focus-visible {
+  color: var(--accent);
+}
+
+.tag:hover::after,
+.tag:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+.tag:focus-visible {
+  outline: none;
 }
 
 @media (max-width: 768px) {

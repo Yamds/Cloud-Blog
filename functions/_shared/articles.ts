@@ -36,7 +36,18 @@ const TAG_SEPARATOR = "\u001f";
 const DEFAULT_ICON_NAME = "ph:article";
 const SAFE_MEDIA_PATH_PATTERN = /^\/api\/cms\/media(?:\/|$|\?)/;
 const SAFE_COLOR_PATTERN =
-  /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|hsla?\(\s*-?(?:\d+(?:\.\d+)?)(?:deg|grad|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\))$/i;
+  /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|hsla?\(\s*-?(?:\d+(?:\.\d+)?)(?:deg|grad|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|oklch\(\s*(?:\d+(?:\.\d+)?%?|\.\d+)\s+(?:\d+(?:\.\d+)?%?|\.\d+)\s+-?\d+(?:\.\d+)?(?:deg|grad|rad|turn)?\s*(?:\/\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\))$/i;
+const SAFE_COLOR_VARIABLES = new Set([
+  "--accent",
+  "--accent-hover",
+  "--text-primary",
+  "--text-secondary",
+  "--text-tertiary",
+  "--article-mark-accent",
+  "--article-mark-warm",
+  "--article-mark-green",
+  "--article-mark-rose",
+]);
 const VALID_BLOCK_TYPES = new Set<ArticleContentBlock["type"]>([
   "heading",
   "paragraph",
@@ -594,5 +605,12 @@ function normalizeSafeColor(value: unknown): string | undefined {
   }
 
   const color = value.trim();
+
+  const variableMatch = /^var\(\s*(--[a-z0-9-]+)\s*\)$/i.exec(color);
+  const variableName = variableMatch?.[1];
+  if (variableName && SAFE_COLOR_VARIABLES.has(variableName)) {
+    return `var(${variableName})`;
+  }
+
   return SAFE_COLOR_PATTERN.test(color) ? color : undefined;
 }

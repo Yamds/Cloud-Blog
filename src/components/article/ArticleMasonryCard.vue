@@ -4,6 +4,8 @@ import type { Article } from "../../types/article";
 import { formatShanghaiDate } from "../../utils/date";
 
 defineProps<{ article: Article }>();
+
+const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
 </script>
 
 <template>
@@ -14,7 +16,15 @@ defineProps<{ article: Article }>();
     <footer class="footer">
       <time :datetime="article.publishedAt">{{ formatShanghaiDate(article.publishedAt) }}</time>
       <div class="tags">
-        <span v-for="tag in article.tags" :key="tag" class="tag">{{ tag }}</span>
+        <RouterLink
+          v-for="tag in article.tags"
+          :key="tag"
+          class="tag"
+          :to="getTagRoute(tag)"
+          @click.stop
+        >
+          {{ tag }}
+        </RouterLink>
       </div>
     </footer>
   </article>
@@ -29,5 +39,11 @@ defineProps<{ article: Article }>();
 .footer { display: flex; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
 time { color: var(--text-tertiary); font-family: var(--font-heading); font-size: 13px; }
 .tags { display: flex; gap: var(--space-1); flex-wrap: wrap; }
-.tag { background: var(--bg-elevated); border-radius: 3px; padding: 3px 10px; font-size: 12px; color: var(--text-tertiary); }
+.tag { position: relative; display: inline-flex; align-items: center; padding: 2px 0; font-size: 12px; color: var(--text-tertiary); text-decoration: none; transition: color var(--transition-fast); }
+.tag::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: currentColor; opacity: 0; transform: scaleX(0); transform-origin: right center; transition: opacity var(--transition-fast), transform var(--transition-fast); }
+.tag:hover,
+.tag:focus-visible { color: var(--accent); }
+.tag:hover::after,
+.tag:focus-visible::after { opacity: 1; transform: scaleX(1); transform-origin: left center; }
+.tag:focus-visible { outline: none; }
 </style>

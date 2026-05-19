@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
         title="滚动到文章列表"
         @click="scrollToArticles"
       >
-        <IconifyIcon icon="ph:caret-down" :size="24" aria-label="滚动到文章列表" />
+        <IconifyIcon icon="ph:caret-down" :size="24" aria-hidden="true" />
       </button>
     </section>
 
@@ -223,30 +223,24 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--bg-elevated) 82%, transparent);
+  background: transparent;
   color: var(--text-tertiary);
-  backdrop-filter: blur(10px);
   transition:
     color var(--transition-fast),
-    border-color var(--transition-fast),
-    transform var(--transition-fast),
-    background var(--transition-fast);
+    transform var(--transition-fast);
   animation: hero-scroll-bounce 2s ease-in-out infinite;
 }
 
 .hero-scroll-hint:hover,
 .hero-scroll-hint:focus-visible {
   color: var(--accent);
-  border-color: color-mix(in oklch, var(--accent) 36%, var(--border-subtle));
-  background: color-mix(in oklch, var(--bg-elevated) 92%, transparent);
-  transform: translateX(-50%) translateY(3px);
 }
 
 .hero-scroll-hint:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
 }
 
 .article-list {
@@ -322,11 +316,6 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .hero-scroll-hint {
     animation: none;
-  }
-
-  .hero-scroll-hint:hover,
-  .hero-scroll-hint:focus-visible {
-    transform: translateX(-50%);
   }
 }
 </style>

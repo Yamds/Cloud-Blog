@@ -28,7 +28,7 @@ import plaintext from "highlight.js/lib/languages/plaintext";
 import shell from "highlight.js/lib/languages/shell";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   autosaveCmsArticle,
@@ -40,7 +40,7 @@ import {
   restoreCmsArticleRevision,
   updateCmsArticle,
 } from "@/api/cms";
-import { uploadCmsImage } from "@/api/uploads";
+import { uploadCmsImage, uploadCmsImageFromUrl } from "@/api/uploads";
 import {
   formatContent,
   generateSummary,
@@ -75,6 +75,7 @@ const loadError = ref("");
 const saving = ref(false);
 const publishing = ref(false);
 const imageUploading = ref(false);
+const imageConverting = ref(false);
 const saveMessage = ref("");
 const saveError = ref("");
 const activeAiKey = ref<CmsAiActionKey | null>(null);
@@ -86,9 +87,27 @@ const latestAutosave = ref<CmsArticleAutosave | null>(null);
 const revisionsLoading = ref(false);
 const revisionsError = ref("");
 const imageUploadInput = ref<HTMLInputElement | null>(null);
+const editorContentWrap = ref<HTMLElement | null>(null);
+const stickyTopOffset = ref(80);
 let applyingEditorContent = false;
 let autosavePaused = false;
 let autosaveTimer: number | null = null;
+
+const CMS_MEDIA_PATH_PREFIX = "/api/cms/media";
+const STICKY_HEADER_EXTRA_GAP = 12;
+
+interface ImageNodeContext {
+  src: string;
+  alt: string;
+  pos: number;
+}
+
+interface HoveredImageContext extends ImageNodeContext {
+  top: number;
+  left: number;
+}
+
+const hoveredExternalImage = ref<HoveredImageContext | null>(null);
 
 interface EditorSnapshotSource {
   getJSON: () => unknown;
@@ -309,6 +328,32 @@ const showTableMenu = computed(() => {
   return Boolean(editor.value?.isActive("table"));
 });
 
+const selectedExternalImage = computed(() => {
+  trackEditorRevision();
+  return getSelectedExternalImage();
+});
+
+const showImageConvertMenu = computed(() => Boolean(selectedExternalImage.value));
+
+const imageOperationPending = computed(() => imageUploading.value || imageConverting.value);
+
+const stickyHeaderStyle = computed(() => ({
+  "--editor-sticky-top": `${stickyTopOffset.value}px`,
+}));
+
+const hoverConvertButtonStyle = computed(() => {
+  const target = hoveredExternalImage.value;
+
+  if (!target) {
+    return {};
+  }
+
+  return {
+    top: `${target.top}px`,
+    left: `${target.left}px`,
+  };
+});
+
 function trackEditorRevision(): number {
   return editorRevision.value;
 }
@@ -490,7 +535,7 @@ function pauseAutosaveBriefly(): void {
 }
 
 function scheduleAutosave(): void {
-  if (autosavePaused || loading.value || saving.value || publishing.value || imageUploading.value || !draft.id) {
+  if (autosavePaused || loading.value || saving.value || publishing.value || imageOperationPending.value || !draft.id) {
     return;
   }
 
@@ -505,7 +550,7 @@ function scheduleAutosave(): void {
 }
 
 async function runAutosave(): Promise<void> {
-  if (autosavePaused || loading.value || saving.value || publishing.value || imageUploading.value || !draft.id) {
+  if (autosavePaused || loading.value || saving.value || publishing.value || imageOperationPending.value || !draft.id) {
     return;
   }
 
@@ -1013,11 +1058,39 @@ function toggleLink(): void {
 }
 
 function openImagePicker(): void {
-  if (imageUploading.value) {
+  if (imageOperationPending.value) {
     return;
   }
 
   imageUploadInput.value?.click();
+}
+
+function promptImageLink(): void {
+  const currentEditor = editor.value;
+
+  if (!currentEditor) {
+    return;
+  }
+
+  const url = window.prompt("图片 URL", "");
+
+  if (url === null) {
+    return;
+  }
+
+  const normalizedUrl = normalizeInsertableImageUrl(url);
+
+  if (!normalizedUrl) {
+    saveMessage.value = "";
+    saveError.value = "请输入 http/https 图片地址，或现有的 /api/cms/media 地址。";
+    return;
+  }
+
+  currentEditor.chain().focus().setImage({ src: normalizedUrl }).run();
+  syncDraftFromEditor(currentEditor);
+  scheduleAutosave();
+  saveError.value = "";
+  saveMessage.value = "已插入图片链接。";
 }
 
 async function handleImageInputChange(event: Event): Promise<void> {
@@ -1035,7 +1108,7 @@ async function handleImageInputChange(event: Event): Promise<void> {
 async function uploadAndInsertImage(file: File): Promise<void> {
   const currentEditor = editor.value;
 
-  if (!currentEditor || imageUploading.value) {
+  if (!currentEditor || imageOperationPending.value) {
     return;
   }
 
@@ -1045,10 +1118,7 @@ async function uploadAndInsertImage(file: File): Promise<void> {
 
   try {
     if (!draft.id) {
-      saveMessage.value = "正在先保存文章，以便图片关联到当前文章...";
-      const article = await persistDraft();
-      applyArticle(article);
-      await loadRevisions(article.id);
+      await ensureDraftExistsForImageOperation("正在先保存文章，以便图片关联到当前文章...");
     }
 
     const uploaded = await uploadCmsImage(file, {
@@ -1080,6 +1150,192 @@ async function uploadAndInsertImage(file: File): Promise<void> {
   }
 }
 
+async function convertExternalImage(target: ImageNodeContext | null = selectedExternalImage.value ?? hoveredExternalImage.value): Promise<void> {
+  const currentEditor = editor.value;
+
+  if (!currentEditor || !target || imageOperationPending.value) {
+    return;
+  }
+
+  imageConverting.value = true;
+  saveMessage.value = "";
+  saveError.value = "";
+
+  try {
+    if (!draft.id) {
+      await ensureDraftExistsForImageOperation("正在先保存文章，以便外链图片能关联到当前文章...");
+    }
+
+    saveMessage.value = "正在转存外链图片到媒体库...";
+    const uploaded = await uploadCmsImageFromUrl(target.src, {
+      articleId: draft.id,
+    });
+
+    replaceImageAtPosition(target.pos, {
+      src: uploaded.url,
+      alt: target.alt,
+    });
+    hoveredExternalImage.value = null;
+    syncDraftFromEditor(currentEditor);
+    scheduleAutosave();
+    saveError.value = "";
+    saveMessage.value = "已将外链图片转存到媒体库。";
+  } catch (error) {
+    saveMessage.value = "";
+    saveError.value = isApiError(error) ? error.message : "外链图片转存失败，请稍后重试。";
+  } finally {
+    imageConverting.value = false;
+  }
+}
+
+async function ensureDraftExistsForImageOperation(message: string): Promise<void> {
+  saveMessage.value = message;
+  const article = await persistDraft();
+  applyArticle(article);
+  await loadRevisions(article.id);
+}
+
+function replaceImageAtPosition(pos: number, attrs: { src: string; alt?: string }): void {
+  const currentEditor = editor.value;
+
+  if (!currentEditor) {
+    return;
+  }
+
+  currentEditor.chain().focus().setNodeSelection(pos).updateAttributes("image", attrs).run();
+}
+
+function handleEditorMouseMove(event: MouseEvent): void {
+  const wrap = editorContentWrap.value;
+  const currentEditor = editor.value;
+
+  if (!wrap || !currentEditor) {
+    return;
+  }
+
+  const target = event.target as HTMLElement | null;
+
+  if (target?.closest(".image-convert-float")) {
+    return;
+  }
+
+  const imageElement = target?.closest("img");
+
+  if (!(imageElement instanceof HTMLImageElement) || !wrap.contains(imageElement)) {
+    hoveredExternalImage.value = null;
+    return;
+  }
+
+  const src = imageElement.getAttribute("src")?.trim() ?? imageElement.currentSrc.trim();
+
+  if (!isExternalImageUrl(src)) {
+    hoveredExternalImage.value = null;
+    return;
+  }
+
+  const rect = imageElement.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const buttonWidth = 126;
+  const left = Math.min(
+    Math.max(rect.right - wrapRect.left - buttonWidth, 8),
+    Math.max(wrap.clientWidth - buttonWidth - 8, 8),
+  );
+  const top = Math.max(rect.top - wrapRect.top + 8, 8);
+
+  hoveredExternalImage.value = {
+    src,
+    alt: imageElement.getAttribute("alt")?.trim() ?? "",
+    pos: currentEditor.view.posAtDOM(imageElement, 0),
+    top,
+    left,
+  };
+}
+
+function clearHoveredExternalImage(): void {
+  hoveredExternalImage.value = null;
+}
+
+function getSelectedExternalImage(): ImageNodeContext | null {
+  const currentEditor = editor.value;
+
+  if (!currentEditor || !currentEditor.isActive("image")) {
+    return null;
+  }
+
+  const selection = currentEditor.state.selection as typeof currentEditor.state.selection & {
+    node?: {
+      type?: {
+        name?: string;
+      };
+      attrs?: Record<string, unknown>;
+    };
+  };
+
+  if (selection.node?.type?.name !== "image") {
+    return null;
+  }
+
+  const src = typeof selection.node.attrs?.src === "string" ? selection.node.attrs.src.trim() : "";
+  if (!isExternalImageUrl(src)) {
+    return null;
+  }
+
+  return {
+    src,
+    alt: typeof selection.node.attrs?.alt === "string" ? selection.node.attrs.alt : "",
+    pos: selection.from,
+  };
+}
+
+function normalizeInsertableImageUrl(value: string): string | null {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith(CMS_MEDIA_PATH_PREFIX)) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+
+    if (parsed.pathname.startsWith(CMS_MEDIA_PATH_PREFIX)) {
+      return parsed.pathname + parsed.search + parsed.hash;
+    }
+
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function isExternalImageUrl(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    const isHttp = parsed.protocol === "http:" || parsed.protocol === "https:";
+    return isHttp && !parsed.pathname.startsWith(CMS_MEDIA_PATH_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+function updateStickyTopOffset(): void {
+  const navbar = document.querySelector<HTMLElement>(".navbar");
+  stickyTopOffset.value = (navbar?.getBoundingClientRect().height ?? 68) + STICKY_HEADER_EXTRA_GAP;
+}
+
 watch(
   articleId,
   (id) => {
@@ -1092,7 +1348,13 @@ onBeforeUnmount(() => {
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
   }
+  window.removeEventListener("resize", updateStickyTopOffset);
   editor.value?.destroy();
+});
+
+onMounted(() => {
+  updateStickyTopOffset();
+  window.addEventListener("resize", updateStickyTopOffset);
 });
 
 watch(
@@ -1127,35 +1389,44 @@ watch(
     <div class="editor-layout" :class="{ loading }">
       <main>
         <input ref="imageUploadInput" class="hidden-file-input" type="file" accept="image/*" @change="handleImageInputChange" />
-        <div class="header-actions">
-          <button type="button" class="text-action" @click="handlePreview">预览</button>
-          <button type="button" class="text-action" :disabled="loading || saving || publishing" @click="handleSave">
-            {{ saving ? "保存中..." : "保存" }}
-          </button>
-          <button
-            type="button"
-            class="text-action publish-action"
-            :disabled="loading || saving || publishing"
-            @click="handlePublish"
-          >
-            {{ publishing ? "发布中..." : "发布" }}
-          </button>
+        <div class="editor-sticky-shell" :style="stickyHeaderStyle">
+          <div class="header-actions">
+            <button type="button" class="text-action" @click="handlePreview">预览</button>
+            <button type="button" class="text-action" :disabled="loading || saving || publishing" @click="handleSave">
+              {{ saving ? "保存中..." : "保存" }}
+            </button>
+            <button
+              type="button"
+              class="text-action publish-action"
+              :disabled="loading || saving || publishing"
+              @click="handlePublish"
+            >
+              {{ publishing ? "发布中..." : "发布" }}
+            </button>
+          </div>
+          <input v-model="draft.title" type="text" class="title-input" placeholder="文章标题..." />
+          <EditorToolbar
+            :actions="toolbarActions"
+            :active-keys="activeToolbarKeys"
+            :heading-value="activeHeadingValue"
+            :colors="toolbarColors"
+            :active-color="activeEditorColor"
+            :background-colors="toolbarBackgroundColors"
+            :active-background-color="activeEditorBackgroundColor"
+            @toggle="toggleToolbar"
+            @set-heading="setHeadingLevel"
+            @set-color="setEditorColor"
+            @set-background-color="setEditorBackgroundColor"
+            @image-upload="openImagePicker"
+            @image-link="promptImageLink"
+          />
         </div>
-        <input v-model="draft.title" type="text" class="title-input" placeholder="文章标题..." />
-        <EditorToolbar
-          :actions="toolbarActions"
-          :active-keys="activeToolbarKeys"
-          :heading-value="activeHeadingValue"
-          :colors="toolbarColors"
-          :active-color="activeEditorColor"
-          :background-colors="toolbarBackgroundColors"
-          :active-background-color="activeEditorBackgroundColor"
-          @toggle="toggleToolbar"
-          @set-heading="setHeadingLevel"
-          @set-color="setEditorColor"
-          @set-background-color="setEditorBackgroundColor"
-        />
-        <section class="editor-content-wrap">
+        <section
+          ref="editorContentWrap"
+          class="editor-content-wrap"
+          @mousemove="handleEditorMouseMove"
+          @mouseleave="clearHoveredExternalImage"
+        >
           <p class="hint">正文</p>
           <BubbleMenu
             v-if="editor"
@@ -1191,6 +1462,30 @@ watch(
               <button type="button" title="删除当前表格列" @click="runTableAction('deleteColumn')">删列</button>
             </div>
           </BubbleMenu>
+          <BubbleMenu
+            v-if="editor"
+            :editor="editor"
+            plugin-key="image-convert-menu"
+            :should-show="() => showImageConvertMenu"
+            :options="{ placement: 'top-start', offset: 8 }"
+          >
+            <div class="context-menu image-context-menu" aria-label="图片操作">
+              <span>外链图片</span>
+              <button type="button" :disabled="imageOperationPending" @click="convertExternalImage(selectedExternalImage)">
+                {{ imageConverting ? "转存中..." : "转存到媒体库" }}
+              </button>
+            </div>
+          </BubbleMenu>
+          <button
+            v-if="hoveredExternalImage && !selectedExternalImage"
+            type="button"
+            class="image-convert-float"
+            :style="hoverConvertButtonStyle"
+            :disabled="imageOperationPending"
+            @click="convertExternalImage(hoveredExternalImage)"
+          >
+            {{ imageConverting ? "转存中..." : "转存到媒体库" }}
+          </button>
           <EditorContent v-if="editor" :editor="editor" class="editor-content" :class="{ disabled: loading }" />
           <p v-if="aiMessage" class="ai-note">{{ aiMessage }}</p>
           <p v-if="aiError" class="ai-error">{{ aiError }}</p>
@@ -1318,24 +1613,62 @@ watch(
 .hidden-file-input { display: none; }
 .editor-layout { display: grid; grid-template-columns: 1fr 320px; gap: var(--space-4); }
 .editor-layout.loading { opacity: 0.82; }
+.editor-sticky-shell {
+  position: sticky;
+  top: var(--editor-sticky-top);
+  z-index: 11;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-3);
+  background: color-mix(in oklab, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
 .header-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap; }
 .text-action {
+  position: relative;
   border: 0;
   background: transparent;
   color: var(--text-secondary);
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
+  padding: 7px 0;
 }
+
+.text-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
 .text-action:hover:enabled,
 .text-action:focus-visible {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--accent);
+}
+
+.text-action:hover:enabled::after,
+.text-action:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+.text-action:focus-visible {
+  outline: none;
 }
 .text-action:disabled { cursor: not-allowed; opacity: 0.5; }
 .publish-action { color: var(--accent); }
-.title-input { border: 0; font-size: clamp(30px, 4vw, 38px); padding: var(--space-2) 0; margin-bottom: var(--space-3); background: transparent; }
+.title-input { border: 0; font-size: clamp(30px, 4vw, 38px); padding: var(--space-2) 0; background: transparent; }
 .title-input:hover,.title-input:focus { border: 0; }
-.editor-content-wrap { margin-top: var(--space-3); border: 1px solid var(--border-subtle); background: var(--bg-elevated); border-radius: var(--radius-md); padding: var(--space-3); }
+.editor-content-wrap { position: relative; margin-top: var(--space-2); border: 1px solid var(--border-subtle); background: var(--bg-elevated); border-radius: var(--radius-md); padding: var(--space-3); }
 .hint { font-size: 12px; color: var(--text-tertiary); margin-bottom: var(--space-2); }
 .context-menu {
   display: inline-flex;
@@ -1374,6 +1707,32 @@ watch(
   padding: 0 24px 0 8px;
   border-radius: var(--radius-sm);
   font-size: 12px;
+}
+.image-context-menu span {
+  padding: 0 6px 0 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.image-convert-float {
+  position: absolute;
+  z-index: 9;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--bg-elevated) 94%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--text-primary) 10%, transparent);
+  backdrop-filter: blur(12px);
+}
+.image-convert-float:hover:enabled,
+.image-convert-float:focus-visible,
+.image-context-menu button:hover:enabled,
+.image-context-menu button:focus-visible {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--accent);
 }
 .editor-content { min-height: 440px; }
 .editor-content.disabled { pointer-events: none; opacity: 0.72; }
@@ -1624,5 +1983,8 @@ watch(
   color: var(--text-primary);
   font-size: 13px;
 }
-@media (max-width: 1024px) { .editor-layout { grid-template-columns: 1fr; } }
+@media (max-width: 1024px) {
+  .editor-layout { grid-template-columns: 1fr; }
+  .editor-sticky-shell { top: calc(var(--editor-sticky-top) - 4px); }
+}
 </style>

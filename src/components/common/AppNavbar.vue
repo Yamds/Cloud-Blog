@@ -165,23 +165,16 @@ watch(
   font-size: 1.4rem;
   letter-spacing: 0;
   color: var(--text-primary);
-  transition:
-    color var(--transition-fast),
-    transform var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .logo:hover,
 .logo:focus-visible {
   color: var(--accent);
-  transform: translateY(-1px);
 }
 
 .logo:focus-visible {
   outline: none;
-}
-
-.logo:active {
-  transform: translateY(0);
 }
 
 .nav-links {
@@ -199,9 +192,7 @@ watch(
   padding: 0 12px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition:
-    color var(--transition-fast),
-    transform var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .nav-link::after {
@@ -228,7 +219,6 @@ watch(
 .nav-link:focus-visible,
 .nav-link:active {
   color: var(--accent);
-  transform: translateY(-1px);
 }
 
 .nav-link:hover::after,
@@ -247,10 +237,6 @@ watch(
 .nav-link:focus-visible {
   outline: 1px solid color-mix(in oklch, var(--accent) 32%, transparent);
   outline-offset: 4px;
-}
-
-.nav-link:active {
-  transform: translateY(0);
 }
 
 .nav-actions {
@@ -274,19 +260,12 @@ watch(
   min-width: 0;
   min-height: 36px;
   color: var(--text-secondary);
-  transition:
-    color var(--transition-fast),
-    transform var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .auth-user:hover,
 .auth-user:focus-visible {
   color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.auth-user:active {
-  transform: translateY(0);
 }
 
 .auth-avatar {
@@ -330,12 +309,6 @@ watch(
 .icon-button:focus-visible {
   background: transparent;
   color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.login-link:active,
-.icon-button:active {
-  transform: translateY(0);
 }
 
 .login-link:disabled {

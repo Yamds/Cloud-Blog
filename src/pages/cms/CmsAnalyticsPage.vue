@@ -25,7 +25,7 @@ async function loadAnalytics(): Promise<void> {
   try {
     summary.value = await getCmsAnalyticsSummary();
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "访问分析加载失败。";
+    notice.value = isApiError(error) ? error.message : "Failed to load analytics.";
   } finally {
     loading.value = false;
   }
@@ -50,7 +50,7 @@ onMounted(() => {
     <p v-if="notice" class="notice">{{ notice }}</p>
 
     <section class="top-actions">
-      <button type="button" :disabled="loading" @click="loadAnalytics">
+      <button type="button" class="text-action" :disabled="loading" @click="loadAnalytics">
         <IconifyIcon icon="ph:arrows-clockwise" :size="16" />
         {{ loading ? "同步中" : "刷新" }}
       </button>
@@ -99,7 +99,7 @@ onMounted(() => {
         </div>
         <ol v-if="summary.popularArticles.length" class="rank-list">
           <li v-for="article in summary.popularArticles" :key="article.articleId">
-            <RouterLink :to="`/articles/${article.slug}`">{{ article.title }}</RouterLink>
+            <RouterLink class="text-link" :to="`/articles/${article.slug}`">{{ article.title }}</RouterLink>
             <strong>{{ formatCount(article.views) }}</strong>
           </li>
         </ol>
@@ -166,6 +166,56 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   min-height: 36px;
+}
+.text-link,
+.text-action {
+  position: relative;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.text-link::after,
+.text-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.text-link:hover,
+.text-link:focus-visible,
+.text-action:hover,
+.text-action:focus-visible {
+  color: var(--accent);
+}
+.text-link:hover::after,
+.text-link:focus-visible::after,
+.text-action:hover::after,
+.text-action:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+.text-action {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.text-action:disabled {
+  color: var(--text-tertiary);
+}
+.text-action:disabled::after {
+  display: none;
+}
+.text-link:focus-visible,
+.text-action:focus-visible {
+  outline: none;
 }
 .metric-grid,
 .analytics-grid {

@@ -355,22 +355,48 @@ h2 { font-family: var(--font-heading); font-size: 28px; font-weight: 400; }
 .section-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
 .primary-action,
 .secondary-action {
+  position: relative;
   display: inline-flex;
   align-items: center;
   min-height: 36px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 8px 14px;
-  transition:
-    transform var(--transition-fast),
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast);
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
 }
-.primary-action { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.primary-action:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); }
-.secondary-action { color: var(--text-secondary); background: var(--bg-elevated); }
-.secondary-action:hover { color: var(--text-primary); border-color: var(--accent); transform: translateY(-1px); }
+.primary-action::after,
+.secondary-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.primary-action:hover,
+.primary-action:focus-visible,
+.secondary-action:hover,
+.secondary-action:focus-visible {
+  color: var(--accent);
+}
+.primary-action:hover::after,
+.primary-action:focus-visible::after,
+.secondary-action:hover::after,
+.secondary-action:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+.primary-action:focus-visible,
+.secondary-action:focus-visible {
+  outline: none;
+}
 @media (max-width: 640px) {
   .analytics-grid { grid-template-columns: 1fr; }
   .trend-item { grid-template-columns: 48px minmax(0, 1fr) auto; }

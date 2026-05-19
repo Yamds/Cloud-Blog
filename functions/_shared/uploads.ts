@@ -8,7 +8,8 @@ export interface StorageEnv extends Env {
 
 export interface UploadImageRequest {
   articleId: string | null;
-  file: File;
+  file?: File;
+  imageUrl?: string;
 }
 
 export interface UploadedImagePayload {
@@ -81,6 +82,7 @@ export const MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 const IMAGE_MIME_PREFIX = "image/";
 const PUBLIC_MEDIA_BASE_PATH = "/api/cms/media";
+const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
 const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
   "image/avif": "avif",
   "image/gif": "gif",
@@ -100,32 +102,64 @@ export function requireBucket(env: StorageEnv): R2Bucket {
 }
 
 export async function readUploadImageRequest(request: Request): Promise<UploadImageRequest> {
-  let formData: FormData;
+  const contentType = request.headers.get("content-type") ?? "";
 
-  try {
-    formData = await request.formData();
-  } catch {
-    throw new ApiError(400, "VALIDATION_ERROR", "Request body must be multipart form data.");
+  if (contentType.includes("multipart/form-data")) {
+    let formData: FormData;
+
+    try {
+      formData = await request.formData();
+    } catch {
+      throw new ApiError(400, "VALIDATION_ERROR", "Request body must be multipart form data.");
+    }
+
+    const fileValue = formData.get("file");
+    const imageUrlValue = formData.get("imageUrl");
+    const articleIdValue = formData.get("articleId");
+    const articleId =
+      typeof articleIdValue === "string" && articleIdValue.trim()
+        ? articleIdValue.trim().slice(0, 128)
+        : null;
+
+    if (fileValue instanceof File) {
+      validateImageFile(fileValue);
+      return {
+        articleId,
+        file: fileValue,
+      };
+    }
+
+    if (typeof imageUrlValue === "string" && imageUrlValue.trim()) {
+      return {
+        articleId,
+        imageUrl: validateRemoteImageUrl(imageUrlValue),
+      };
+    }
+
+    throw new ApiError(400, "VALIDATION_ERROR", 'Field "file" or "imageUrl" is required.');
   }
 
-  const fileValue = formData.get("file");
+  if (contentType.includes("application/json")) {
+    const payload = await readJsonBody(request);
 
-  if (!(fileValue instanceof File)) {
-    throw new ApiError(400, "VALIDATION_ERROR", 'Field "file" is required.');
+    if (!isRecord(payload)) {
+      throw new ApiError(400, "VALIDATION_ERROR", "Request body must be a JSON object.");
+    }
+
+    const articleId = readOptionalArticleId(payload.articleId);
+    const imageUrl = validateRemoteImageUrl(payload.imageUrl);
+
+    return {
+      articleId,
+      imageUrl,
+    };
   }
 
-  validateImageFile(fileValue);
-
-  const articleIdValue = formData.get("articleId");
-  const articleId =
-    typeof articleIdValue === "string" && articleIdValue.trim()
-      ? articleIdValue.trim().slice(0, 128)
-      : null;
-
-  return {
-    articleId,
-    file: fileValue,
-  };
+  throw new ApiError(
+    400,
+    "VALIDATION_ERROR",
+    "Request body must be multipart form data or application/json.",
+  );
 }
 
 export async function uploadImageToStorage(options: {
@@ -203,6 +237,67 @@ export async function uploadImageToStorage(options: {
     objectKey,
     url: buildMediaUrl(id),
   };
+}
+
+export async function createImageFileFromUrl(imageUrl: string): Promise<File> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_IMAGE_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch(imageUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const isAbortError = error instanceof Error && error.name === "AbortError";
+    throw new ApiError(
+      502,
+      "REMOTE_IMAGE_FETCH_FAILED",
+      isAbortError ? "Fetching remote image timed out." : "Failed to fetch remote image.",
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    throw new ApiError(502, "REMOTE_IMAGE_FETCH_FAILED", `Remote image request failed with ${response.status}.`);
+  }
+
+  const contentType = normalizeMimeType(response.headers.get("content-type"));
+  if (!contentType.startsWith(IMAGE_MIME_PREFIX)) {
+    throw new ApiError(400, "VALIDATION_ERROR", "Remote resource must return image/* MIME type.");
+  }
+
+  const contentLength = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      `Image size must be at most ${Math.floor(MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024))}MB.`,
+    );
+  }
+
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength <= 0) {
+    throw new ApiError(400, "VALIDATION_ERROR", "Remote image is empty.");
+  }
+  if (bytes.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      `Image size must be at most ${Math.floor(MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024))}MB.`,
+    );
+  }
+
+  const filename = inferRemoteImageFilename(imageUrl, contentType);
+  const file = new File([bytes], filename, {
+    type: contentType,
+  });
+  validateImageFile(file);
+  return file;
 }
 
 export async function listMediaObjects(db: D1Database): Promise<CmsMediaObjectPayload[]> {
@@ -412,6 +507,73 @@ function resolveImageExtension(file: File): string {
   }
 
   return "bin";
+}
+
+function validateRemoteImageUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new ApiError(400, "VALIDATION_ERROR", '"imageUrl" must be a string.');
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new ApiError(400, "VALIDATION_ERROR", '"imageUrl" is required.');
+  }
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new ApiError(400, "VALIDATION_ERROR", '"imageUrl" must be a valid URL.');
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ApiError(400, "VALIDATION_ERROR", '"imageUrl" must use http or https.');
+  }
+
+  return parsed.toString();
+}
+
+function inferRemoteImageFilename(imageUrl: string, mimeType: string): string {
+  try {
+    const url = new URL(imageUrl);
+    const segment = url.pathname.split("/").filter(Boolean).pop() ?? "";
+    const decoded = decodeURIComponent(segment).trim();
+
+    if (decoded && /^[^<>:"/\\|?*\u0000-\u001f]+$/.test(decoded)) {
+      return decoded.slice(0, 255);
+    }
+  } catch {
+    // Fall through to default filename.
+  }
+
+  const extension = IMAGE_EXTENSION_BY_MIME[mimeType] ?? "bin";
+  return `remote-image.${extension}`;
+}
+
+function normalizeMimeType(value: string | null): string {
+  return (value ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+async function readJsonBody(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    throw new ApiError(400, "VALIDATION_ERROR", "Request body must be valid JSON.");
+  }
+}
+
+function readOptionalArticleId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 128) : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolveMediaStatus(

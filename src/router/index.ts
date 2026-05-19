@@ -23,6 +23,11 @@ const router = createRouter({
           component: () => import('@/pages/public/ArticlesPage.vue'),
         },
         {
+          path: 'tags/:tag',
+          name: 'tag-articles',
+          component: () => import('@/pages/public/ArticlesPage.vue'),
+        },
+        {
           path: 'articles/:slug',
           name: 'article-detail',
           component: () => import('@/pages/public/ArticlePage.vue'),

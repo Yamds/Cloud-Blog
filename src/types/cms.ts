@@ -211,6 +211,10 @@ export interface CmsStorageUploadCandidate {
   relatedArticleId: string | null;
 }
 
+export interface CmsImageUploadOptions {
+  articleId?: string | null;
+}
+
 export interface CmsImageUploadResult {
   id: string;
   objectKey: string;

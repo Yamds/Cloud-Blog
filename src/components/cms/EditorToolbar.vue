@@ -28,6 +28,8 @@ const emit = defineEmits<{
   "set-heading": [value: string];
   "set-color": [value: string];
   "set-background-color": [value: string];
+  "image-upload": [];
+  "image-link": [];
 }>();
 
 const toolbarRows = [
@@ -72,8 +74,26 @@ function findAction(key: string): ToolbarAction | undefined {
 
         <template v-if="group.kind === 'format' || group.kind === 'actions'">
           <template v-for="key in group.keys" :key="key">
+            <div v-if="key === 'image' && findAction(key)" class="toolbar-image-menu">
+              <button
+                type="button"
+                class="toolbar-btn"
+                :title="findAction(key)?.title"
+                :aria-label="findAction(key)?.title"
+              >
+                <IconifyIcon :icon="findAction(key)?.icon ?? ''" />
+              </button>
+              <div class="toolbar-image-dropdown" role="menu" aria-label="图片操作">
+                <button type="button" class="toolbar-dropdown-btn" role="menuitem" @click="emit('image-upload')">
+                  上传图片
+                </button>
+                <button type="button" class="toolbar-dropdown-btn" role="menuitem" @click="emit('image-link')">
+                  输入链接
+                </button>
+              </div>
+            </div>
             <button
-              v-if="findAction(key)"
+              v-else-if="findAction(key)"
               type="button"
               class="toolbar-btn"
               :class="{ active: activeKeys.includes(key) }"
@@ -160,6 +180,53 @@ function findAction(key: string): ToolbarAction | undefined {
 .toolbar-btn { width: 36px; height: 36px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; }
 .toolbar-btn:hover { border-color: var(--border); color: var(--text-primary); background: var(--bg); }
 .toolbar-btn.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.toolbar-image-menu {
+  position: relative;
+  display: inline-flex;
+}
+.toolbar-image-menu:focus-within .toolbar-image-dropdown,
+.toolbar-image-menu:hover .toolbar-image-dropdown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.toolbar-image-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 112px;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 10px 26px color-mix(in oklab, var(--text-primary) 10%, transparent);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+.toolbar-dropdown-btn {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+.toolbar-dropdown-btn:hover,
+.toolbar-dropdown-btn:focus-visible {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text-primary);
+}
 .color-select-group {
   display: inline-flex;
   align-items: center;

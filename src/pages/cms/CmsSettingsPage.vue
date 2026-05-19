@@ -25,7 +25,7 @@ async function loadSettings(): Promise<void> {
     form.commentsEnabled = settings.commentsEnabled;
     form.analyticsEnabled = settings.analyticsEnabled;
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "设置加载失败。";
+    notice.value = isApiError(error) ? error.message : "Failed to load settings.";
   } finally {
     loading.value = false;
   }
@@ -46,9 +46,9 @@ async function handleSubmit(): Promise<void> {
     form.siteDescription = settings.siteDescription;
     form.commentsEnabled = settings.commentsEnabled;
     form.analyticsEnabled = settings.analyticsEnabled;
-    notice.value = "站点设置已保存。";
+    notice.value = "Settings saved.";
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "设置保存失败。";
+    notice.value = isApiError(error) ? error.message : "Failed to save settings.";
   } finally {
     saving.value = false;
   }
@@ -67,12 +67,12 @@ onMounted(() => {
       <section class="settings-panel">
         <h2>基础信息</h2>
         <label>
-          <span>站点名</span>
+          <span>站点名称</span>
           <input v-model="form.siteName" type="text" maxlength="80" placeholder="Yamds's Blog" />
         </label>
         <label>
           <span>简介</span>
-          <textarea v-model="form.siteDescription" maxlength="300" rows="4" placeholder="写一句站点简介"></textarea>
+          <textarea v-model="form.siteDescription" maxlength="300" rows="4" placeholder="写一段站点简介"></textarea>
         </label>
       </section>
 
@@ -89,13 +89,13 @@ onMounted(() => {
           <input v-model="form.analyticsEnabled" type="checkbox" />
           <span>
             <strong>记录访问分析</strong>
-            <small>关闭后 pageview API 仍返回成功，但不写入新记录。</small>
+            <small>关闭后 pageview API 仍返回成功，但不会写入新记录。</small>
           </span>
         </label>
       </section>
 
       <div class="form-actions">
-        <button type="button" :disabled="loading || saving" @click="loadSettings">重新读取</button>
+        <button type="button" class="text-action" :disabled="loading || saving" @click="loadSettings">重新读取</button>
         <button type="submit" class="primary" :disabled="loading || saving">
           {{ saving ? "保存中..." : "保存设置" }}
         </button>
@@ -172,9 +172,49 @@ textarea {
 }
 .form-actions button {
   min-height: 38px;
-  padding: 0 14px;
+}
+.text-action {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+.text-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.text-action:hover,
+.text-action:focus-visible {
+  color: var(--accent);
+}
+.text-action:hover::after,
+.text-action:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+.text-action:disabled {
+  color: var(--text-tertiary);
+}
+.text-action:disabled::after {
+  display: none;
+}
+.text-action:focus-visible {
+  outline: none;
 }
 .form-actions .primary {
+  padding: 0 14px;
   border-color: var(--accent);
   background: var(--accent);
   color: var(--bg);

@@ -55,7 +55,7 @@ async function loadComments(): Promise<void> {
   try {
     comments.value = await getCmsComments();
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "评论列表加载失败。";
+    notice.value = isApiError(error) ? error.message : "Failed to load comments.";
   } finally {
     loading.value = false;
   }
@@ -63,7 +63,7 @@ async function loadComments(): Promise<void> {
 
 async function runAction(comment: CmsComment, action: "hide" | "restore" | "delete"): Promise<void> {
   if (action === "delete") {
-    const confirmed = window.confirm("确认删除这条评论吗？删除后公开页不再展示内容。");
+    const confirmed = window.confirm("Delete this comment? It will no longer appear on the public page.");
     if (!confirmed) return;
   }
 
@@ -79,16 +79,21 @@ async function runAction(comment: CmsComment, action: "hide" | "restore" | "dele
           : await deleteCmsComment(comment.id);
 
     comments.value = comments.value.map((item) => (item.id === updated.id ? updated : item));
-    notice.value = action === "hide" ? "评论已隐藏。" : action === "restore" ? "评论已恢复。" : "评论已删除。";
+    notice.value =
+      action === "hide"
+        ? "Comment hidden."
+        : action === "restore"
+          ? "Comment restored."
+          : "Comment deleted.";
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "操作失败，请稍后重试。";
+    notice.value = isApiError(error) ? error.message : "Action failed. Please try again.";
   } finally {
     busyId.value = "";
   }
 }
 
 function statusLabel(status: CmsComment["status"]): string {
-  return status === "visible" ? "可见" : status === "hidden" ? "隐藏" : "已删除";
+  return status === "visible" ? "Visible" : status === "hidden" ? "Hidden" : "Deleted";
 }
 
 onMounted(() => {
@@ -125,9 +130,9 @@ onMounted(() => {
         <option value="all">全部状态</option>
         <option value="visible">可见</option>
         <option value="hidden">隐藏</option>
-        <option value="deleted">已删除</option>
+        <option value="deleted">删除</option>
       </select>
-      <button type="button" :disabled="loading" @click="loadComments">
+      <button type="button" class="text-action" :disabled="loading" @click="loadComments">
         <IconifyIcon icon="ph:arrows-clockwise" :size="16" />
         {{ loading ? "读取中" : "刷新" }}
       </button>
@@ -147,7 +152,7 @@ onMounted(() => {
           <p class="comment-content">
             {{ comment.status === "deleted" ? "这条评论已删除。" : comment.content }}
           </p>
-          <RouterLink class="article-link" :to="`/articles/${comment.articleSlug}`">
+          <RouterLink class="article-link text-link" :to="`/articles/${comment.articleSlug}`">
             {{ comment.articleTitle }}
           </RouterLink>
         </div>
@@ -155,6 +160,7 @@ onMounted(() => {
         <div class="comment-actions">
           <button
             v-if="comment.status === 'visible'"
+            class="text-action"
             type="button"
             :disabled="busyId === comment.id"
             @click="runAction(comment, 'hide')"
@@ -163,6 +169,7 @@ onMounted(() => {
           </button>
           <button
             v-if="comment.status === 'hidden'"
+            class="text-action"
             type="button"
             :disabled="busyId === comment.id"
             @click="runAction(comment, 'restore')"
@@ -170,6 +177,7 @@ onMounted(() => {
             恢复
           </button>
           <button
+            class="text-action"
             type="button"
             :disabled="busyId === comment.id || comment.status === 'deleted'"
             @click="runAction(comment, 'delete')"
@@ -229,10 +237,58 @@ onMounted(() => {
 .toolbar button {
   min-height: 40px;
 }
-.toolbar button {
+.text-link,
+.text-action {
+  position: relative;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.text-link::after,
+.text-action::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.text-link:hover,
+.text-link:focus-visible,
+.text-action:hover,
+.text-action:focus-visible {
+  color: var(--accent);
+}
+.text-link:hover::after,
+.text-link:focus-visible::after,
+.text-action:hover::after,
+.text-action:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+.text-action {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.text-action:disabled {
+  color: var(--text-tertiary);
+}
+.text-action:disabled::after {
+  display: none;
+}
+.text-link:focus-visible,
+.text-action:focus-visible {
+  outline: none;
 }
 .comments-table {
   overflow: hidden;
@@ -285,10 +341,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.comment-actions button {
-  min-height: 34px;
-  padding: 0 10px;
 }
 @media (max-width: 720px) {
   .comment-row {

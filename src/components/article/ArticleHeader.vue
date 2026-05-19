@@ -4,6 +4,8 @@ import type { Article } from "../../types/article";
 import { formatShanghaiDate } from "../../utils/date";
 
 defineProps<{ article: Article }>();
+
+const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
 </script>
 
 <template>
@@ -12,11 +14,18 @@ defineProps<{ article: Article }>();
     <h1 class="title">{{ article.title }}</h1>
     <div class="meta">
       <time :datetime="article.publishedAt">{{ formatShanghaiDate(article.publishedAt) }}</time>
-      <span>·</span>
+      <span>&middot;</span>
       <span>阅读时长 {{ article.readingMinutes }} 分钟</span>
     </div>
     <div class="tags">
-      <span v-for="tag in article.tags" :key="tag" class="tag">{{ tag }}</span>
+      <RouterLink
+        v-for="tag in article.tags"
+        :key="tag"
+        class="tag"
+        :to="getTagRoute(tag)"
+      >
+        {{ tag }}
+      </RouterLink>
     </div>
   </header>
 </template>
@@ -28,5 +37,11 @@ defineProps<{ article: Article }>();
 .meta { display: flex; gap: var(--space-2); justify-content: center; flex-wrap: wrap; color: var(--text-tertiary); margin-bottom: var(--space-3); }
 time { font-family: var(--font-heading); }
 .tags { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; }
-.tag { background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 4px 12px; font-size: 13px; color: var(--text-secondary); }
+.tag { position: relative; display: inline-flex; align-items: center; padding: 2px 0; font-size: 13px; color: var(--text-secondary); text-decoration: none; transition: color var(--transition-fast); }
+.tag::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 1px; background: currentColor; opacity: 0; transform: scaleX(0); transform-origin: right center; transition: opacity var(--transition-fast), transform var(--transition-fast); }
+.tag:hover,
+.tag:focus-visible { color: var(--accent); }
+.tag:hover::after,
+.tag:focus-visible::after { opacity: 1; transform: scaleX(1); transform-origin: left center; }
+.tag:focus-visible { outline: none; }
 </style>
