@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { onMounted } from "vue";
+import { RouterView } from "vue-router";
 
-import AppNavbar from '@/components/common/AppNavbar.vue'
-import { useAuthStore } from '@/stores/auth'
-import { useThemeStore } from '@/stores/theme'
+import AppNavbar from "@/components/common/AppNavbar.vue";
+import { useAuthStore } from "@/stores/auth";
+import { useLanguageStore } from "@/stores/language";
+import { useThemeStore } from "@/stores/theme";
 
-const themeStore = useThemeStore()
-const authStore = useAuthStore()
+const themeStore = useThemeStore();
+const languageStore = useLanguageStore();
+const authStore = useAuthStore();
 
-themeStore.initFromStorage()
+themeStore.initFromStorage();
+languageStore.initFromStorage();
 
 onMounted(() => {
-  void authStore.loadMe()
-})
+  void authStore.loadMe();
+});
 </script>
 
 <template>

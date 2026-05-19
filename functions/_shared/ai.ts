@@ -3,7 +3,7 @@ import { ApiError } from "./http";
 import { getCurrentUser } from "./auth";
 import { queryFirst } from "./d1";
 
-export type AiTask = "summary" | "format" | "polish" | "tags";
+export type AiTask = "summary" | "format" | "polish" | "tags" | "translate";
 
 interface ChatMessage {
   role: "system" | "user";
@@ -25,8 +25,22 @@ interface ChatCompletionResponse {
 
 export interface AiTextInput {
   title?: string;
+  summary?: string;
   contentText?: string;
+  contentJson?: unknown;
   articleId?: string;
+}
+
+export interface AiTranslateInput extends AiTextInput {
+  title: string;
+}
+
+export interface AiTranslateResult {
+  title: string;
+  summary: string;
+  contentText: string;
+  contentJson: TiptapDoc;
+  model: string;
 }
 
 export interface TiptapTextMark {
@@ -95,12 +109,13 @@ interface AiAuditActor {
   userId: string;
 }
 
-interface ExecuteAiTaskWithAuditOptions<Result> {
+interface ExecuteAiTaskWithAuditOptions<Input extends AiTextInput, Result> {
   request: Request;
   env: Env;
   db: D1Database;
   task: AiTask;
-  run: (input: AiTextInput) => Promise<Result>;
+  readInput?: (value: unknown) => Input;
+  run: (input: Input) => Promise<Result>;
   mapSuccess: (result: Result) => {
     model: string;
     outputJson?: unknown;
@@ -150,6 +165,35 @@ export function readAiTextInput(value: unknown): AiTextInput {
   };
 }
 
+export function readAiTranslateInput(value: unknown): AiTranslateInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(400, "VALIDATION_ERROR", "Request body must be a JSON object.");
+  }
+
+  const body = value as Record<string, unknown>;
+  const title = normalizeText(body.title, 200);
+  const summary = normalizeText(body.summary, 500);
+  const contentText = normalizeText(body.contentText ?? body.content, MAX_INPUT_CHARS);
+  const articleId = normalizeOptionalId(body.articleId ?? body.article_id);
+  const contentJson = body.contentJson;
+
+  if (!title) {
+    throw new ApiError(400, "VALIDATION_ERROR", "title is required.");
+  }
+
+  if (!summary && !contentText && contentJson === undefined) {
+    throw new ApiError(400, "VALIDATION_ERROR", "summary, contentText or contentJson is required.");
+  }
+
+  return {
+    title,
+    summary,
+    contentText,
+    contentJson,
+    articleId,
+  };
+}
+
 export async function readJsonBody(request: Request): Promise<unknown> {
   try {
     return await request.json();
@@ -158,21 +202,22 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-export async function executeAiTaskWithAudit<Result>({
+export async function executeAiTaskWithAudit<Input extends AiTextInput, Result>({
   request,
   env,
   db,
   task,
+  readInput,
   run,
   mapSuccess,
-}: ExecuteAiTaskWithAuditOptions<Result>): Promise<Result> {
+}: ExecuteAiTaskWithAuditOptions<Input, Result>): Promise<Result> {
   const actor = await requireAiAccess(request, env, db);
   const rawBody = await request.text();
   const inputHash = await sha256Hex(rawBody);
   let articleId: string | null = null;
 
   try {
-    const input = readAiTextInput(parseJsonText(rawBody));
+    const input = (readInput ?? readAiTextInput)(parseJsonText(rawBody)) as Input;
     articleId = await resolveArticleIdForAudit(db, input.articleId);
 
     const result = await run(input);
@@ -309,6 +354,54 @@ export async function formatContent(env: Env, input: AiTextInput): Promise<{ con
   };
 }
 
+export async function translateContent(env: Env, input: AiTranslateInput): Promise<AiTranslateResult> {
+  const sourceDoc = normalizeTiptapDoc(input.contentJson) ?? formatPlainTextToTiptapDoc(input.contentText || "");
+  const sourceText = compactText(input.contentText || extractPlainTextFromDoc(sourceDoc));
+  const content = await runChat(env, "translate", [
+    {
+      role: "system",
+      content:
+        "你是一个技术博客中译英助手。只输出 JSON 对象，不要 Markdown、代码围栏、HTML 或解释。输出字段必须为 title、summary、contentText、contentJson。contentJson 必须是安全的 Tiptap doc JSON，保持原有结构和事实，不翻译 tags，不补充不存在的信息。",
+    },
+    {
+      role: "user",
+      content: createTranslatePrompt({
+        title: input.title,
+        summary: input.summary || "",
+        contentText: sourceText,
+        contentJson: sourceDoc,
+      }),
+    },
+  ]);
+
+  const parsed = parseJsonFromText(content);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ApiError(502, "AI_FAILED", "AI provider did not return a translation object.");
+  }
+
+  const body = parsed as Record<string, unknown>;
+  const title = compactText(normalizeText(body.title, 200));
+  const summary = compactText(normalizeText(body.summary, 500));
+  const contentText = normalizeText(body.contentText ?? body.content, MAX_INPUT_CHARS);
+  const contentJson = normalizeTiptapDoc(body.contentJson);
+
+  if (!title) {
+    throw new ApiError(502, "AI_FAILED", "AI translation title is empty.");
+  }
+
+  if (!contentJson) {
+    throw new ApiError(502, "AI_FAILED", "AI translation contentJson is invalid.");
+  }
+
+  return {
+    title,
+    summary,
+    contentText: contentText || extractPlainTextFromDoc(contentJson),
+    contentJson,
+    model: resolveModel(env, "translate"),
+  };
+}
+
 async function runChat(env: Env, task: AiTask, messages: ChatMessage[]): Promise<string> {
   const apiKey = env.AI_API_KEY;
 
@@ -380,6 +473,9 @@ function resolveModel(env: Env, task: AiTask): string {
   }
   if (task === "tags") {
     return env.AI_MODEL_TAGS || DEFAULT_MODEL;
+  }
+  if (task === "translate") {
+    return env.AI_MODEL_TRANSLATE || env.AI_MODEL_FORMAT || DEFAULT_MODEL;
   }
 
   return DEFAULT_MODEL;
@@ -509,6 +605,28 @@ function createFormatPrompt(input: AiTextInput): string {
     "2. 空行只表示块分隔，不要生成空 paragraph。",
     "3. 不要输出不在允许 schema 内的 attrs、id、class、style、language、html、markdown 字段。",
     "不要把输入外的说明文字放进结果。",
+    `输入 JSON：\n${source}`,
+  ].join("\n");
+}
+
+function createTranslatePrompt(input: {
+  title: string;
+  summary: string;
+  contentText: string;
+  contentJson: TiptapDoc;
+}): string {
+  const source = JSON.stringify(input, null, 2);
+
+  return [
+    "把输入中的中文文章翻译成自然、克制、准确的英文技术博客文本。",
+    "要求：",
+    "1. 只输出一个 JSON 对象，字段必须为 title、summary、contentText、contentJson。",
+    "2. title、summary、contentText 都翻译成英文。",
+    "3. contentJson 必须保留为安全的 Tiptap doc，根节点为 doc。",
+    "4. 保持原有结构、段落、列表、标题、引用、代码块、链接与图片，不要输出 HTML。",
+    "5. 代码块内容、命令、路径、标识符、URL 通常保持原样，只翻译自然语言部分。",
+    "6. 不要添加 tags、notes、comments、metadata 等额外字段。",
+    "7. 不要补充原文没有的事实。",
     `输入 JSON：\n${source}`,
   ].join("\n");
 }
@@ -832,6 +950,44 @@ function previewText(value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function extractPlainTextFromDoc(doc: TiptapDoc): string {
+  const parts: string[] = [];
+
+  const walk = (node: TiptapNode | TiptapTextNode): void => {
+    if (isTiptapTextNode(node)) {
+      parts.push(node.text);
+      return;
+    }
+
+    if (Array.isArray(node.content)) {
+      for (const child of node.content) {
+        walk(child);
+      }
+    }
+
+    if (
+      node.type === "paragraph" ||
+      node.type === "heading" ||
+      node.type === "blockquote" ||
+      node.type === "listItem" ||
+      node.type === "codeBlock" ||
+      node.type === "tableRow"
+    ) {
+      parts.push("\n");
+    }
+  };
+
+  for (const node of doc.content) {
+    walk(node);
+  }
+
+  return parts.join("").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function isTiptapTextNode(node: TiptapNode | TiptapTextNode): node is TiptapTextNode {
+  return node.type === "text";
 }
 
 async function sha256Hex(value: string): Promise<string> {

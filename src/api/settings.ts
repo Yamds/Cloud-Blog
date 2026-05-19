@@ -11,16 +11,32 @@ export interface UpdateSiteSettingsInput extends Record<string, unknown> {
   commentsEnabled?: boolean;
   analyticsEnabled?: boolean;
   navAction?: SiteNavActionSettings;
+  navActions?: SiteNavActionSettings[];
+}
+
+function normalizeSettings(settings: SiteSettings): SiteSettings {
+  const navActions =
+    Array.isArray(settings.navActions) && settings.navActions.length > 0
+      ? settings.navActions
+      : settings.navAction
+        ? [settings.navAction]
+        : [];
+
+  return {
+    ...settings,
+    navAction: navActions[0] ?? settings.navAction,
+    navActions,
+  };
 }
 
 export async function getSiteSettings(): Promise<SiteSettings> {
   const response = await requestJson<SiteSettingsResponse>("/api/site-settings");
-  return response.settings;
+  return normalizeSettings(response.settings);
 }
 
 export async function getCmsSiteSettings(): Promise<SiteSettings> {
   const response = await requestJson<SiteSettingsResponse>("/api/cms/settings");
-  return response.settings;
+  return normalizeSettings(response.settings);
 }
 
 export async function updateCmsSiteSettings(body: UpdateSiteSettingsInput): Promise<SiteSettings> {
@@ -28,5 +44,5 @@ export async function updateCmsSiteSettings(body: UpdateSiteSettingsInput): Prom
     method: "PATCH",
     body,
   });
-  return response.settings;
+  return normalizeSettings(response.settings);
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "../common/IconifyIcon.vue";
 import CommentItem from "./CommentItem.vue";
 import type { ArticleComment } from "../../types/article";
@@ -23,6 +24,7 @@ const props = defineProps<{
   onDeleteComment?: (commentId: string) => void | Promise<void>;
 }>();
 
+const { t } = useI18n();
 const draft = ref("");
 const replyDraft = ref("");
 const replyingToId = ref("");
@@ -102,8 +104,7 @@ const handleSubmitReply = async () => {
 
 const handleDeleteComment = async (comment: ArticleComment) => {
   if (typeof window !== "undefined") {
-    const confirmed = window.confirm("确定删除这条评论吗？");
-
+    const confirmed = window.confirm(t("comments.confirmDelete"));
     if (!confirmed) {
       return;
     }
@@ -125,10 +126,10 @@ const handleDeleteComment = async (comment: ArticleComment) => {
   <section class="comments" aria-labelledby="article-comments-title">
     <header class="comments-header">
       <div class="title-group">
-        <h2 id="article-comments-title">评论 {{ totalCount }}</h2>
+        <h2 id="article-comments-title">{{ t("comments.title", { count: totalCount }) }}</h2>
         <p class="helper-text">
-          <span v-if="isLoggedIn && currentUserName">已登录为 {{ currentUserName }}</span>
-          <span v-else>仅支持使用 GitHub 账号发表评论</span>
+          <span v-if="isLoggedIn && currentUserName">{{ t("comments.loggedInAs", { name: currentUserName }) }}</span>
+          <span v-else>{{ t("comments.loginRequired") }}</span>
         </p>
       </div>
 
@@ -141,33 +142,33 @@ const handleDeleteComment = async (comment: ArticleComment) => {
           @click="props.onRequestLogin?.()"
         >
           <IconifyIcon icon="ph:github-logo" :size="16" />
-          <span>{{ authLoading ? "检查中..." : "登录后评论" }}</span>
+          <span>{{ authLoading ? t("comments.authChecking") : t("comments.loginButton") }}</span>
         </button>
       </div>
     </header>
 
-    <p v-if="commentsEnabled === false" class="login-hint">评论发布已关闭，但历史评论仍然可见。</p>
+    <p v-if="commentsEnabled === false" class="login-hint">{{ t("comments.closed") }}</p>
 
     <div v-else-if="isLoggedIn" class="editor">
       <textarea
         v-model="draft"
         rows="4"
         maxlength="1000"
-        placeholder="写点什么..."
+        :placeholder="t('comments.placeholder')"
         :disabled="isSubmittingComment"
       />
       <div class="editor-footer">
         <span class="editor-meta" :class="{ warning: rootRemaining < 0 }">{{ rootRemaining }}</span>
         <button type="button" class="submit-btn" :disabled="!canSubmitComment" @click="handleSubmitComment">
-          {{ isSubmittingComment ? "发布中..." : "发布评论" }}
+          {{ isSubmittingComment ? t("comments.submitting") : t("comments.submit") }}
         </button>
       </div>
     </div>
 
-    <p v-else class="login-hint">登录后即可评论、回复，并删除自己的评论。</p>
+    <p v-else class="login-hint">{{ t("comments.loginHint") }}</p>
 
     <p v-if="errorMessage" class="comment-error" role="alert">{{ errorMessage }}</p>
-    <p v-else-if="isLoading" class="comment-state" aria-live="polite">评论加载中...</p>
+    <p v-else-if="isLoading" class="comment-state" aria-live="polite">{{ t("comments.loading") }}</p>
 
     <div v-if="comments.length" class="list">
       <CommentItem
@@ -188,7 +189,7 @@ const handleDeleteComment = async (comment: ArticleComment) => {
       />
     </div>
 
-    <p v-else-if="!isLoading" class="comment-state comment-empty">还没有评论，来聊两句吧。</p>
+    <p v-else-if="!isLoading" class="comment-state comment-empty">{{ t("comments.empty") }}</p>
   </section>
 </template>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "../common/IconifyIcon.vue";
 import type { ArticleComment } from "../../types/article";
 
@@ -22,6 +23,7 @@ const emit = defineEmits<{
   delete: [comment: ArticleComment];
 }>();
 
+const { t } = useI18n();
 const canReply = computed(() => !props.nested);
 const canDelete = computed(
   () =>
@@ -51,15 +53,15 @@ const formattedTime = computed(() => {
       :href="comment.authorHtmlUrl"
       target="_blank"
       rel="noreferrer"
-      :aria-label="`${comment.authorName} 的 GitHub 主页`"
+      :aria-label="t('nav.userProfile', { name: comment.authorName })"
     >
-      <img class="avatar" :src="comment.authorAvatar" :alt="`${comment.authorName} 的头像`" />
+      <img class="avatar" :src="comment.authorAvatar" :alt="t('nav.userProfile', { name: comment.authorName })" />
     </a>
     <img
       v-else-if="comment.authorAvatar"
       class="avatar"
       :src="comment.authorAvatar"
-      :alt="`${comment.authorName} 的头像`"
+      :alt="t('nav.userProfile', { name: comment.authorName })"
     />
     <span v-else class="avatar avatar-fallback" aria-hidden="true">
       <IconifyIcon icon="ph:user-circle" :size="20" />
@@ -90,7 +92,7 @@ const formattedTime = computed(() => {
           :disabled="replySubmitting"
           @click="showReplyComposer ? emit('cancelReply') : emit('reply', comment)"
         >
-          {{ showReplyComposer ? "收起回复" : "回复" }}
+          {{ showReplyComposer ? t("comments.collapseReply") : t("comments.reply") }}
         </button>
 
         <button
@@ -100,7 +102,7 @@ const formattedTime = computed(() => {
           :disabled="isDeleting"
           @click="emit('delete', comment)"
         >
-          {{ isDeleting ? "删除中..." : "删除" }}
+          {{ isDeleting ? t("comments.deleting") : t("comments.delete") }}
         </button>
       </div>
 
@@ -109,7 +111,7 @@ const formattedTime = computed(() => {
           :value="replyDraft"
           rows="3"
           maxlength="1000"
-          placeholder="写下你的回复..."
+          :placeholder="t('comments.replyPlaceholder')"
           :disabled="replySubmitting"
           @input="emit('updateReplyDraft', ($event.target as HTMLTextAreaElement).value)"
         />
@@ -117,10 +119,10 @@ const formattedTime = computed(() => {
           <span class="reply-meta">{{ 1000 - (replyDraft?.length ?? 0) }}</span>
           <div class="reply-actions">
             <button class="action-btn" type="button" :disabled="replySubmitting" @click="emit('cancelReply')">
-              取消
+              {{ t("comments.cancel") }}
             </button>
             <button class="submit-btn" type="button" :disabled="replySubmitting" @click="emit('submitReply')">
-              {{ replySubmitting ? "发送中..." : "发送回复" }}
+              {{ replySubmitting ? t("comments.sendingReply") : t("comments.sendReply") }}
             </button>
           </div>
         </div>

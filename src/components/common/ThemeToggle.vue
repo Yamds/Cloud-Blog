@@ -1,116 +1,118 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from "vue";
 
-import { useThemeStore } from '@/stores/theme'
-import IconifyIcon from './IconifyIcon.vue'
+import { useI18n } from "@/i18n/useI18n";
+import { useThemeStore } from "@/stores/theme";
+import IconifyIcon from "./IconifyIcon.vue";
 
-const themeStore = useThemeStore()
-const wrapperRef = ref<HTMLElement | null>(null)
-const toggleButtonRef = ref<HTMLButtonElement | null>(null)
-const isPaletteOpen = ref(false)
+const themeStore = useThemeStore();
+const { t } = useI18n();
+const wrapperRef = ref<HTMLElement | null>(null);
+const toggleButtonRef = ref<HTMLButtonElement | null>(null);
+const isPaletteOpen = ref(false);
 
 const themeIcon = computed(() =>
-  themeStore.theme === 'dark' ? 'ph:sun-dim' : 'ph:moon',
-)
+  themeStore.theme === "dark" ? "ph:sun-dim" : "ph:moon",
+);
 
 const themeTitle = computed(() =>
-  themeStore.theme === 'dark' ? '切换到浅色主题' : '切换到深色主题',
-)
+  themeStore.theme === "dark" ? t("theme.light") : t("theme.dark"),
+);
 
-const huePercent = computed(() => `${Math.max(0, Math.min(360, themeStore.hue)) / 3.6}%`)
-let closeTimer: ReturnType<typeof setTimeout> | null = null
+const huePercent = computed(() => `${Math.max(0, Math.min(360, themeStore.hue)) / 3.6}%`);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearCloseTimer(): void {
   if (closeTimer === null) {
-    return
+    return;
   }
 
-  clearTimeout(closeTimer)
-  closeTimer = null
+  clearTimeout(closeTimer);
+  closeTimer = null;
 }
 
 function openPalette(): void {
-  clearCloseTimer()
-  isPaletteOpen.value = true
+  clearCloseTimer();
+  isPaletteOpen.value = true;
 }
 
 function closePalette(restoreFocus = false): void {
-  clearCloseTimer()
-  isPaletteOpen.value = false
+  clearCloseTimer();
+  isPaletteOpen.value = false;
 
   if (restoreFocus) {
-    toggleButtonRef.value?.focus()
+    toggleButtonRef.value?.focus();
   }
 }
 
 function scheduleClosePalette(): void {
-  clearCloseTimer()
+  clearCloseTimer();
   closeTimer = setTimeout(() => {
-    closeTimer = null
+    closeTimer = null;
 
-    if (wrapperRef.value?.matches(':focus-within')) {
-      return
+    if (wrapperRef.value?.matches(":focus-within")) {
+      return;
     }
 
-    isPaletteOpen.value = false
-  }, 140)
+    isPaletteOpen.value = false;
+  }, 140);
 }
 
 function onFocusOut(event: FocusEvent): void {
-  const nextTarget = event.relatedTarget as Node | null
+  const nextTarget = event.relatedTarget as Node | null;
   if (nextTarget && wrapperRef.value?.contains(nextTarget)) {
-    return
+    return;
   }
 
-  scheduleClosePalette()
+  scheduleClosePalette();
 }
 
 function onWrapperKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') {
-    return
+  if (event.key !== "Escape") {
+    return;
   }
 
-  event.preventDefault()
-  closePalette(true)
+  event.preventDefault();
+  closePalette(true);
 }
 
 function onRainbowClick(event: MouseEvent): void {
-  const target = event.currentTarget as HTMLElement | null
+  const target = event.currentTarget as HTMLElement | null;
   if (!target) {
-    return
+    return;
   }
 
-  const rect = target.getBoundingClientRect()
-  const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width)
-  const hue = Math.round((x / rect.width) * 360)
-  themeStore.setHue(hue)
+  const rect = target.getBoundingClientRect();
+  const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+  const hue = Math.round((x / rect.width) * 360);
+  themeStore.setHue(hue);
 }
 
 function onRainbowKeydown(event: KeyboardEvent): void {
-  if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-    event.preventDefault()
-    themeStore.setHue(Math.max(0, themeStore.hue - 5))
-    return
+  if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+    event.preventDefault();
+    themeStore.setHue(Math.max(0, themeStore.hue - 5));
+    return;
   }
-  if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-    event.preventDefault()
-    themeStore.setHue(Math.min(360, themeStore.hue + 5))
-    return
+  if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+    event.preventDefault();
+    themeStore.setHue(Math.min(360, themeStore.hue + 5));
+    return;
   }
-  if (event.key === 'Home') {
-    event.preventDefault()
-    themeStore.setHue(0)
-    return
+  if (event.key === "Home") {
+    event.preventDefault();
+    themeStore.setHue(0);
+    return;
   }
-  if (event.key === 'End') {
-    event.preventDefault()
-    themeStore.setHue(360)
+  if (event.key === "End") {
+    event.preventDefault();
+    themeStore.setHue(360);
   }
 }
 
 onBeforeUnmount(() => {
-  clearCloseTimer()
-})
+  clearCloseTimer();
+});
 </script>
 
 <template>
@@ -143,7 +145,7 @@ onBeforeUnmount(() => {
         class="rainbow-bar"
         role="slider"
         tabindex="0"
-        aria-label="调整主题色相"
+        :aria-label="t('theme.hue')"
         aria-valuemin="0"
         aria-valuemax="360"
         :aria-valuenow="themeStore.hue"

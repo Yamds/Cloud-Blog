@@ -3,72 +3,76 @@ import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
+import { useI18n } from "@/i18n/useI18n";
 import { getSiteSettings } from "@/api/settings";
 import { useAuthStore } from "@/stores/auth";
 import type { SiteNavActionSettings } from "@/types/cms";
 import IconifyIcon from "./IconifyIcon.vue";
+import LanguageToggle from "./LanguageToggle.vue";
 import ThemeToggle from "./ThemeToggle.vue";
 
 const route = useRoute();
 const authStore = useAuthStore();
+const { t } = useI18n();
 const { isAdmin, isAuthenticated, isLoading, user } = storeToRefs(authStore);
 
-const publicLinks = [
-  { to: "/", label: "首页" },
-  { to: "/articles", label: "文章" },
-] as const;
+const publicLinks = computed(() => [
+  { to: "/", label: t("nav.home") },
+  { to: "/articles", label: t("nav.articles") },
+]);
 
 const isScrolled = ref(false);
-const navAction = ref<SiteNavActionSettings | null>(null);
+const navActions = ref<SiteNavActionSettings[]>([]);
 const isHomeRoute = computed(() => route.path === "/");
 const isHomeTop = computed(() => isHomeRoute.value && !isScrolled.value);
 const userDisplayName = computed(() => user.value?.githubLogin ?? "");
 const userAvatarUrl = computed(() => user.value?.githubAvatarUrl ?? "");
 const userProfileUrl = computed(() => user.value?.githubHtmlUrl ?? `https://github.com/${userDisplayName.value}`);
+const siteName = ref("Yamds's Blog");
 
 const textLinks = computed(() => {
   const items: Array<
     | { type: "internal"; key: string; label: string; to: string }
     | { type: "external"; key: string; label: string; href: string }
-  > = publicLinks.map((link) => ({
+  > = publicLinks.value.map((link) => ({
     type: "internal" as const,
     key: link.to,
     label: link.label,
     to: link.to,
   }));
 
-  if (navAction.value?.enabled && navAction.value.variant === "text") {
-    items.push(createTextNavLink(navAction.value));
-  }
+  navActions.value
+    .filter((action) => action.enabled && action.variant === "text")
+    .forEach((action) => items.push(createTextNavLink(action)));
 
   if (isAdmin.value) {
-    items.push({ type: "internal", key: "/cms", to: "/cms", label: "CMS" });
+    items.push({ type: "internal", key: "/cms", to: "/cms", label: t("nav.cms") });
   }
 
   return items;
 });
 
-const iconNavAction = computed(() => {
-  if (!navAction.value?.enabled || navAction.value.variant !== "icon") {
-    return null;
-  }
-
-  if (navAction.value.targetType === "external") {
-    return {
-      type: "external" as const,
-      href: navAction.value.href,
-      iconName: navAction.value.iconName,
-      title: navAction.value.tooltip,
-    };
-  }
-
-  return {
-    type: "internal" as const,
-    to: normalizeArticlePath(navAction.value.articlePath),
-    iconName: navAction.value.iconName,
-    title: navAction.value.tooltip,
-  };
-});
+const iconNavActions = computed(() =>
+  navActions.value
+    .filter((action) => action.enabled && action.variant === "icon")
+    .map((action) =>
+      action.targetType === "external"
+        ? {
+            key: `${action.iconName}-${action.href}`,
+            type: "external" as const,
+            href: action.href,
+            iconName: action.iconName,
+            title: action.tooltip,
+          }
+        : {
+            key: `${action.iconName}-${action.articlePath}`,
+            type: "internal" as const,
+            to: normalizeArticlePath(action.articlePath),
+            iconName: action.iconName,
+            title: action.tooltip,
+          },
+    ),
+);
 
 function isActive(to: string): boolean {
   if (to === "/") {
@@ -127,9 +131,10 @@ function normalizeArticlePath(value: string): string {
 async function loadNavAction(): Promise<void> {
   try {
     const settings = await getSiteSettings();
-    navAction.value = settings.navAction.enabled ? settings.navAction : null;
+    siteName.value = settings.siteName?.trim() || "Yamds's Blog";
+    navActions.value = settings.navActions.filter((action) => action.enabled);
   } catch {
-    navAction.value = null;
+    navActions.value = [];
   }
 }
 
@@ -156,7 +161,7 @@ watch(
 <template>
   <nav class="navbar" :class="{ 'is-home-top': isHomeTop }">
     <div class="nav-inner">
-      <RouterLink class="logo" to="/" title="返回首页">Yamds's Blog</RouterLink>
+      <RouterLink class="logo" to="/" :title="t('nav.backHome')">{{ siteName }}</RouterLink>
       <div class="nav-links">
         <template v-for="link in textLinks" :key="link.key">
           <RouterLink
@@ -175,8 +180,9 @@ watch(
       </div>
       <div class="nav-actions">
         <component
-          :is="iconNavAction?.type === 'internal' ? RouterLink : 'a'"
-          v-if="iconNavAction"
+          :is="iconNavAction.type === 'internal' ? RouterLink : 'a'"
+          v-for="iconNavAction in iconNavActions"
+          :key="iconNavAction.key"
           class="icon-button nav-action-button"
           v-bind="
             iconNavAction.type === 'internal'
@@ -195,13 +201,13 @@ watch(
             :href="userProfileUrl"
             target="_blank"
             rel="noreferrer"
-            :title="`${userDisplayName} 的 GitHub 主页`"
+            :title="t('nav.userProfile', { name: userDisplayName })"
           >
             <img
               v-if="userAvatarUrl"
               class="auth-avatar"
               :src="userAvatarUrl"
-              :alt="`${userDisplayName} 的头像`"
+              :alt="t('nav.userProfile', { name: userDisplayName })"
               width="28"
               height="28"
             />
@@ -210,14 +216,15 @@ watch(
             </span>
             <span class="auth-name">{{ userDisplayName }}</span>
           </a>
-          <button class="icon-button" type="button" title="登出" aria-label="登出" @click="handleLogout">
+          <button class="icon-button" type="button" :title="t('nav.logout')" :aria-label="t('nav.logout')" @click="handleLogout">
             <IconifyIcon icon="ph:sign-out" :size="18" />
           </button>
         </div>
         <button v-else class="login-link" type="button" :disabled="isLoading" @click="handleLogin">
           <IconifyIcon icon="ph:github-logo" :size="18" />
-          <span>{{ isLoading ? "连接中..." : "GitHub 登录" }}</span>
+          <span>{{ isLoading ? t("nav.loggingIn") : t("nav.login") }}</span>
         </button>
+        <LanguageToggle />
         <ThemeToggle />
       </div>
     </div>

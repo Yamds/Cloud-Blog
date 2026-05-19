@@ -46,6 +46,7 @@ import {
   generateSummary,
   generateTags,
   polishText,
+  translateContent,
   type CmsAiActionKey,
 } from "@/api/ai";
 import { isApiError } from "@/api/http";
@@ -59,7 +60,9 @@ import { cmsAiActions, cmsEditorInitialDraft } from "@/data/cms";
 import type {
   CmsArticleDetail,
   CmsArticleAutosave,
+  CmsLocalizedContentDraft,
   CmsArticleRevision,
+  CmsArticleLanguage,
   CmsArticleStatus,
   CmsEditorDraft,
   CmsPublishInfo,
@@ -70,6 +73,10 @@ const route = useRoute();
 const router = useRouter();
 
 const draft = reactive(createLocalDraft());
+const localizedDrafts = reactive<Record<CmsArticleLanguage, CmsLocalizedContentDraft>>({
+  zh: createLocalizedContentDraft(),
+  en: createLocalizedContentDraft(),
+});
 const loading = ref(false);
 const loadError = ref("");
 const saving = ref(false);
@@ -86,6 +93,8 @@ const revisions = ref<CmsArticleRevision[]>([]);
 const latestAutosave = ref<CmsArticleAutosave | null>(null);
 const revisionsLoading = ref(false);
 const revisionsError = ref("");
+const editorLocale = ref<CmsArticleLanguage>("zh");
+const translatedArticleId = ref("");
 const imageUploadInput = ref<HTMLInputElement | null>(null);
 const editorContentWrap = ref<HTMLElement | null>(null);
 const stickyTopOffset = ref(80);
@@ -158,6 +167,8 @@ const pageTitle = computed(() => (isNewArticle.value ? "新建文章" : "编辑�
 const pageSubtitle = computed(() =>
   isNewArticle.value ? "先写下草稿，保存后再继续整理细节。" : "保持轻量，随时保存，再决定何时发布。",
 );
+const currentLocalizedDraft = computed(() => localizedDrafts[editorLocale.value]);
+const localizedSummaryLength = computed(() => currentLocalizedDraft.value.summary.length);
 
 const toolbarActions = [
   { key: "bold", icon: "ph:text-bolder", title: "加粗" },
@@ -431,6 +442,15 @@ function createLocalDraft(): CmsEditorDraft {
   };
 }
 
+function createLocalizedContentDraft(): CmsLocalizedContentDraft {
+  return {
+    title: "",
+    summary: "",
+    content: "",
+    contentJson: createEmptyDoc(),
+  };
+}
+
 function createEmptyDoc(): Record<string, unknown> {
   return {
     type: "doc",
@@ -466,6 +486,15 @@ function resetDraft(source?: CmsEditorDraft): void {
   draft.content = nextDraft.content;
   draft.contentJson = nextDraft.contentJson;
   draft.publishInfo = createPublishInfo(nextDraft.publishInfo);
+  localizedDrafts.zh = {
+    title: nextDraft.title,
+    summary: nextDraft.summary ?? "",
+    content: nextDraft.content,
+    contentJson: nextDraft.contentJson,
+  };
+  localizedDrafts.en = createLocalizedContentDraft();
+  translatedArticleId.value = "";
+  editorLocale.value = "zh";
   setEditorContent(nextDraft.contentJson);
 }
 
@@ -487,6 +516,8 @@ function applyArticle(article: CmsArticleDetail): void {
       lastSavedAt: formatShanghaiTime(article.updatedAt),
     }),
   });
+  const englishTranslation = article.translations.find((translation) => translation.language === "en");
+  translatedArticleId.value = englishTranslation?.id ?? "";
 }
 
 function markSavingState(state: CmsPublishInfo["autosaveState"]): void {
@@ -519,8 +550,15 @@ function syncDraftFromEditor(currentEditor: EditorSnapshotSource | null | undefi
     return;
   }
 
-  draft.contentJson = currentEditor.getJSON() as Record<string, unknown>;
-  draft.content = currentEditor.getText();
+  const target = localizedDrafts[editorLocale.value];
+  const contentJson = currentEditor.getJSON() as Record<string, unknown>;
+  const content = currentEditor.getText();
+  target.contentJson = contentJson;
+  target.content = content;
+  if (editorLocale.value === "zh") {
+    draft.contentJson = contentJson;
+    draft.content = content;
+  }
   editorRevision.value += 1;
 }
 
@@ -731,17 +769,47 @@ function updateStatus(status: CmsArticleStatus): void {
   draft.status = status;
 }
 
+function hasEnglishContent(): boolean {
+  const english = localizedDrafts.en;
+  return Boolean(english.title.trim() || english.summary.trim() || english.content.trim());
+}
+
 function getSavePayload() {
   syncDraftFromEditor();
+  draft.title = localizedDrafts.zh.title;
+  draft.summary = localizedDrafts.zh.summary;
+  draft.content = localizedDrafts.zh.content;
+  draft.contentJson = localizedDrafts.zh.contentJson;
 
   return {
-    title: draft.title || undefined,
-    summary: draft.summary || undefined,
+    title: localizedDrafts.zh.title || undefined,
+    slug: draft.slug || undefined,
+    summary: localizedDrafts.zh.summary || undefined,
     iconName: draft.iconName || undefined,
     tags: draft.tags,
     status: draft.status,
-    contentText: draft.content || undefined,
-    contentJson: draft.contentJson,
+    contentText: localizedDrafts.zh.content || undefined,
+    contentJson: localizedDrafts.zh.contentJson,
+    language: "zh" as CmsArticleLanguage,
+    translationGroupId: draft.id || undefined,
+  };
+}
+
+function getEnglishSavePayload(sourceArticle: CmsArticleDetail) {
+  const englishSlug = draft.slug ? `${draft.slug}-en` : `${sourceArticle.slug}-en`;
+
+  return {
+    title: localizedDrafts.en.title || undefined,
+    slug: englishSlug,
+    summary: localizedDrafts.en.summary || undefined,
+    iconName: draft.iconName || undefined,
+    tags: [...draft.tags],
+    status: draft.status,
+    contentText: localizedDrafts.en.content || undefined,
+    contentJson: localizedDrafts.en.contentJson,
+    language: "en" as CmsArticleLanguage,
+    translationGroupId: sourceArticle.translationGroupId || sourceArticle.id,
+    translatedFromArticleId: sourceArticle.id,
   };
 }
 
@@ -751,23 +819,40 @@ async function persistDraft(): Promise<CmsArticleDetail> {
     autosaveTimer = null;
   }
 
+  let sourceArticle: CmsArticleDetail;
+
   if (draft.id) {
     const response = await updateCmsArticle(draft.id, getSavePayload());
-    return response.article;
+    sourceArticle = response.article;
+  } else {
+    const response = await createCmsArticle({
+      title: localizedDrafts.zh.title || undefined,
+      slug: draft.slug || undefined,
+      summary: localizedDrafts.zh.summary || undefined,
+      contentText: localizedDrafts.zh.content || undefined,
+      iconName: draft.iconName || undefined,
+      tags: draft.tags,
+      status: draft.status,
+      contentJson: localizedDrafts.zh.contentJson,
+      language: "zh" as CmsArticleLanguage,
+    });
+
+    sourceArticle = response.article;
+    await router.replace(`/cms/articles/${sourceArticle.id}`);
   }
 
-  const response = await createCmsArticle({
-    title: draft.title || undefined,
-    summary: draft.summary || undefined,
-    contentText: draft.content || undefined,
-    iconName: draft.iconName || undefined,
-    tags: draft.tags,
-    status: draft.status,
-    contentJson: draft.contentJson,
-  });
+  if (hasEnglishContent()) {
+    if (translatedArticleId.value) {
+      const response = await updateCmsArticle(translatedArticleId.value, getEnglishSavePayload(sourceArticle));
+      translatedArticleId.value = response.article.id;
+    } else {
+      const response = await createCmsArticle(getEnglishSavePayload(sourceArticle));
+      translatedArticleId.value = response.article.id;
+    }
+  }
 
-  await router.replace(`/cms/articles/${response.article.id}`);
-  return response.article;
+  const refreshed = await getCmsArticle(sourceArticle.id);
+  return refreshed.article;
 }
 
 async function loadArticle(id: string): Promise<void> {
@@ -787,6 +872,7 @@ async function loadArticle(id: string): Promise<void> {
   try {
     const response = await getCmsArticle(id);
     applyArticle(response.article);
+    await loadEnglishTranslation(response.article);
     await loadLatestAutosave(response.article.id, response.article.updatedAt);
     await loadRevisions(response.article.id);
   } catch (error) {
@@ -799,6 +885,30 @@ async function loadArticle(id: string): Promise<void> {
       : "文章详情加载失败，当前保留本地草稿视图。";
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadEnglishTranslation(article: CmsArticleDetail): Promise<void> {
+  const englishTranslation = article.translations.find((translation) => translation.language === "en");
+
+  if (!englishTranslation) {
+    localizedDrafts.en = createLocalizedContentDraft();
+    translatedArticleId.value = "";
+    return;
+  }
+
+  try {
+    const response = await getCmsArticle(englishTranslation.id);
+    localizedDrafts.en = {
+      title: response.article.title,
+      summary: response.article.summary,
+      content: response.article.contentText,
+      contentJson: response.article.contentJson,
+    };
+    translatedArticleId.value = response.article.id;
+  } catch {
+    localizedDrafts.en = createLocalizedContentDraft();
+    translatedArticleId.value = "";
   }
 }
 
@@ -831,7 +941,8 @@ function handleRestoreAutosave(): void {
   resetDraft({
     ...draft,
     id: draft.id,
-    slug: draft.slug,
+    slug: autosave.slug ?? draft.slug,
+    summary: autosave.summary ?? draft.summary,
     title: autosave.title,
     iconName: autosave.iconName,
     tags: [...autosave.tags],
@@ -846,6 +957,16 @@ function handleRestoreAutosave(): void {
   latestAutosave.value = null;
   saveMessage.value = "已从自动保存恢复，请确认后手动保存。";
   saveError.value = "";
+}
+
+function switchEditorLocale(nextLocale: CmsArticleLanguage): void {
+  if (editorLocale.value === nextLocale) {
+    return;
+  }
+
+  syncDraftFromEditor();
+  editorLocale.value = nextLocale;
+  setEditorContent(localizedDrafts[nextLocale].contentJson);
 }
 
 async function loadRevisions(id = draft.id): Promise<void> {
@@ -895,7 +1016,11 @@ async function handlePublish(): Promise<void> {
   try {
     const savedArticle = await persistDraft();
     const response = await publishCmsArticle(savedArticle.id);
+    if (translatedArticleId.value && hasEnglishContent()) {
+      await publishCmsArticle(translatedArticleId.value);
+    }
     applyArticle(response.article);
+    await loadEnglishTranslation(response.article);
     await loadRevisions(response.article.id);
     saveMessage.value = "文章已发布。";
   } catch (error) {
@@ -1010,6 +1135,49 @@ async function runAiAction(key: CmsAiActionKey): Promise<void> {
     aiMessage.value = "已生成结构化排版，并写入编辑器。";
   } catch (error) {
     aiError.value = isApiError(error) ? error.message : "AI 操作失败，请稍后重试。";
+  } finally {
+    activeAiKey.value = null;
+  }
+}
+
+async function handleTranslateToEnglish(): Promise<void> {
+  syncDraftFromEditor();
+  activeAiKey.value = "format";
+  aiMessage.value = "AI 正在翻译英文稿...";
+  aiError.value = "";
+
+  if (!localizedDrafts.zh.content.trim()) {
+    aiMessage.value = "";
+    aiError.value = "请先完成中文正文，再生成英文稿。";
+    activeAiKey.value = null;
+    return;
+  }
+
+  try {
+    const result = await translateContent({
+      articleId: draft.id || undefined,
+      sourceLanguage: "zh",
+      targetLanguage: "en",
+      title: localizedDrafts.zh.title,
+      summary: localizedDrafts.zh.summary,
+      contentText: localizedDrafts.zh.content,
+      contentJson: localizedDrafts.zh.contentJson as { type: "doc"; content: unknown[] },
+    });
+
+    localizedDrafts.en = {
+      title: result.title,
+      summary: result.summary,
+      content: result.contentText,
+      contentJson: result.contentJson,
+    };
+
+    if (editorLocale.value === "en") {
+      setEditorContent(result.contentJson);
+    }
+
+    aiMessage.value = "已生成英文稿，请检查后再保存或发布。";
+  } catch (error) {
+    aiError.value = isApiError(error) ? error.message : "AI 翻译失败，请稍后重试。";
   } finally {
     activeAiKey.value = null;
   }
@@ -1356,7 +1524,16 @@ watch(
 );
 
 watch(
-  () => [draft.title, draft.summary, draft.iconName, draft.status, draft.tags.join("\u001f")],
+  () => [
+    localizedDrafts.zh.title,
+    localizedDrafts.zh.summary,
+    localizedDrafts.en.title,
+    localizedDrafts.en.summary,
+    draft.iconName,
+    draft.status,
+    draft.slug,
+    draft.tags.join("\u001f"),
+  ],
   () => {
     scheduleAutosave();
   },
@@ -1389,6 +1566,26 @@ watch(
         <input ref="imageUploadInput" class="hidden-file-input" type="file" accept="image/*" @change="handleImageInputChange" />
         <div class="editor-actions-sticky" :style="stickyHeaderStyle">
           <div class="header-actions">
+            <div class="language-switch segmented-inline">
+              <button
+                type="button"
+                class="segment-inline"
+                :class="{ active: editorLocale === 'zh' }"
+                :aria-pressed="editorLocale === 'zh'"
+                @click="switchEditorLocale('zh')"
+              >
+                中文
+              </button>
+              <button
+                type="button"
+                class="segment-inline"
+                :class="{ active: editorLocale === 'en' }"
+                :aria-pressed="editorLocale === 'en'"
+                @click="switchEditorLocale('en')"
+              >
+                English
+              </button>
+            </div>
             <button type="button" class="text-action" @click="handlePreview">预览</button>
             <button type="button" class="text-action" :disabled="loading || saving || publishing" @click="handleSave">
               {{ saving ? "保存中..." : "保存" }}
@@ -1401,9 +1598,22 @@ watch(
             >
               {{ publishing ? "发布中..." : "发布" }}
             </button>
+            <button
+              type="button"
+              class="text-action"
+              :disabled="loading || saving || publishing || activeAiKey !== null"
+              @click="handleTranslateToEnglish"
+            >
+              AI 翻译
+            </button>
           </div>
         </div>
-        <input v-model="draft.title" type="text" class="title-input" placeholder="文章标题..." />
+        <input
+          v-model="currentLocalizedDraft.title"
+          type="text"
+          class="title-input"
+          :placeholder="editorLocale === 'zh' ? '文章标题...' : 'English title...'"
+        />
         <div class="editor-toolbar-sticky" :style="stickyHeaderStyle">
           <EditorToolbar
             :actions="toolbarActions"
@@ -1491,17 +1701,19 @@ watch(
         </section>
         <section class="panel">
           <div class="panel-heading">
-            <h3>文章简介</h3>
-            <span>{{ draft.summary?.length ?? 0 }}/240</span>
+            <h3>{{ editorLocale === "zh" ? "文章简介" : "English Summary" }}</h3>
+            <span>{{ localizedSummaryLength }}/240</span>
           </div>
           <textarea
-            v-model="draft.summary"
+            v-model="currentLocalizedDraft.summary"
             class="summary-input"
             maxlength="240"
             rows="5"
-            placeholder="写一段会出现在文章列表中的简介..."
+            :placeholder="editorLocale === 'zh' ? '写一段会出现在文章列表中的简介...' : 'Write a short English summary...'"
           ></textarea>
-          <p class="panel-help">AI 生成摘要会直接填写到这里，保存后同步到首页和文章列表。</p>
+          <p class="panel-help">
+            {{ editorLocale === "zh" ? "AI 生成摘要会直接填写到这里，保存后同步到首页和文章列表。" : "English summary is saved alongside the Chinese article." }}
+          </p>
         </section>
         <section class="panel">
           <h3>访问链接</h3>
@@ -1571,7 +1783,7 @@ watch(
           <p v-else class="panel-help">暂无版本记录。</p>
         </section>
         <section class="panel">
-          <AiPanel :actions="cmsAiActions" :active-key="activeAiKey" @run="runAiAction" />
+          <AiPanel :actions="cmsAiActions" :active-key="activeAiKey === 'translate' ? null : activeAiKey" @run="runAiAction" />
           <p v-if="aiMessage" class="side-note">{{ aiMessage }}</p>
           <p v-if="aiError" class="side-error">{{ aiError }}</p>
         </section>
@@ -1633,6 +1845,28 @@ watch(
   padding: 0 0 var(--space-3);
 }
 .header-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap; }
+.segmented-inline {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--bg-elevated) 80%, transparent);
+}
+.segment-inline {
+  min-width: 68px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 4px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.segment-inline.active {
+  background: var(--bg);
+  color: var(--text-primary);
+}
 .text-action {
   position: relative;
   border: 0;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "@/i18n/useI18n";
 import type { Article } from "@/types/article";
 import { formatShanghaiDateTime } from "@/utils/date";
 
@@ -9,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-sa/4.0/";
+const { t } = useI18n();
 
 const articleUrl = computed(() => {
   const rawUrl = props.article.articleUrl || props.article.url || `/articles/${encodeURIComponent(props.article.slug)}`;
@@ -24,43 +26,43 @@ const articleUrl = computed(() => {
 
 const displayUpdatedAt = computed(() => props.article.updatedAt || props.article.publishedAt || props.article.createdAt || "");
 const displayPublishedAt = computed(() => props.article.publishedAt || props.article.createdAt || "");
-const displayAuthor = computed(() => props.article.authorName || "本站作者");
+const displayAuthor = computed(() => props.article.authorName || t("copyright.defaultAuthor"));
 </script>
 
 <template>
-  <section class="copyright-info" aria-label="文章版权说明">
-    <h2 class="title">版权说明</h2>
+  <section class="copyright-info" :aria-label="t('copyright.title')">
+    <h2 class="title">{{ t("copyright.title") }}</h2>
     <dl class="meta-list">
       <div class="meta-row">
-        <dt>文章标题</dt>
+        <dt>{{ t("copyright.articleTitle") }}</dt>
         <dd>{{ article.title }}</dd>
       </div>
       <div class="meta-row">
-        <dt>文章 URL</dt>
+        <dt>{{ t("copyright.articleUrl") }}</dt>
         <dd>
           <a class="meta-link" :href="articleUrl" target="_blank" rel="noopener noreferrer">{{ articleUrl }}</a>
         </dd>
       </div>
       <div class="meta-row">
-        <dt>文章作者</dt>
+        <dt>{{ t("copyright.author") }}</dt>
         <dd>{{ displayAuthor }}</dd>
       </div>
       <div class="meta-row">
-        <dt>许可协议</dt>
+        <dt>{{ t("copyright.license") }}</dt>
         <dd>
-          转载或引用本文时请遵守
+          <span class="license-copy-prefix">{{ t("copyright.licenseCopyPrefix") }}</span>
           <a class="meta-link" :href="LICENSE_URL" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a>
-          许可协议，注明出处，不得用于商业用途。
+          <span class="license-copy-suffix">{{ t("copyright.licenseCopySuffix") }}</span>
         </dd>
       </div>
       <div class="meta-row">
-        <dt>发布日期</dt>
+        <dt>{{ t("copyright.publishedAt") }}</dt>
         <dd>
           <time :datetime="displayPublishedAt">{{ formatShanghaiDateTime(displayPublishedAt) }}</time>
         </dd>
       </div>
       <div class="meta-row">
-        <dt>更新日期</dt>
+        <dt>{{ t("copyright.updatedAt") }}</dt>
         <dd>
           <time :datetime="displayUpdatedAt">{{ formatShanghaiDateTime(displayUpdatedAt) }}</time>
         </dd>
@@ -106,6 +108,11 @@ dd {
   color: var(--text-secondary);
   line-height: 1.6;
   word-break: break-word;
+}
+
+.license-copy-prefix,
+.license-copy-suffix {
+  white-space: pre-wrap;
 }
 
 time {

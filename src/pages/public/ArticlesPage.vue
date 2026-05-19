@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { RouterLink, useRoute } from "vue-router";
+import { useI18n } from "@/i18n/useI18n";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleMasonryCard from "../../components/article/ArticleMasonryCard.vue";
+import { useLanguageStore } from "@/stores/language";
 import type { Article } from "../../types/article";
 
+const { t } = useI18n();
 const route = useRoute();
+const languageStore = useLanguageStore();
+const { locale } = storeToRefs(languageStore);
 const articles = ref<Article[]>([]);
 const isLoadingArticles = ref(true);
 const articlesLoadError = ref("");
@@ -27,10 +33,12 @@ const filteredArticles = computed(() => {
 });
 
 const hasArticles = computed(() => filteredArticles.value.length > 0);
-const pageTitle = computed(() => (activeTag.value ? `Tag: ${activeTag.value}` : "All Articles"));
+const pageTitle = computed(() =>
+  activeTag.value ? t("articles.tagTitle", { tag: activeTag.value }) : t("articles.all"),
+);
 const pageDescription = computed(() =>
   activeTag.value
-    ? `共 ${filteredArticles.value.length} 篇文章使用这个标签。`
+    ? t("articles.tagDescription", { count: filteredArticles.value.length })
     : "",
 );
 
@@ -39,7 +47,7 @@ const loadArticles = async () => {
   articlesLoadError.value = "";
 
   try {
-    articles.value = await getPublishedArticles();
+    articles.value = await getPublishedArticles(locale.value);
   } catch (error) {
     articles.value = [];
     articlesLoadError.value =
@@ -52,6 +60,10 @@ const loadArticles = async () => {
 onMounted(() => {
   void loadArticles();
 });
+
+watch(locale, () => {
+  void loadArticles();
+});
 </script>
 
 <template>
@@ -59,11 +71,11 @@ onMounted(() => {
     <h2 class="section-title">{{ pageTitle }}</h2>
     <p v-if="pageDescription" class="filter-copy">
       <span>{{ pageDescription }}</span>
-      <RouterLink class="filter-link" to="/articles">查看全部</RouterLink>
+      <RouterLink class="filter-link" to="/articles">{{ t("articles.viewAll") }}</RouterLink>
     </p>
-    <p v-if="isLoadingArticles" class="status-copy" aria-live="polite">文章加载中...</p>
+    <p v-if="isLoadingArticles" class="status-copy" aria-live="polite">{{ t("articles.loading") }}</p>
     <p v-else-if="articlesLoadError" class="status-copy status-error">{{ articlesLoadError }}</p>
-    <p v-else-if="!hasArticles" class="status-copy">当前标签下还没有可展示的公开文章。</p>
+    <p v-else-if="!hasArticles" class="status-copy">{{ t("articles.empty") }}</p>
     <section v-else class="masonry-grid">
       <RouterLink
         v-for="article in filteredArticles"

@@ -2,6 +2,7 @@ import { requestJson } from "@/api/http";
 import type {
   CmsArticleAutosave,
   CmsArticleDetail,
+  CmsArticleLanguage,
   CmsArticleRevision,
   CmsArticleStats,
   CmsArticleStatus,
@@ -14,12 +15,16 @@ export interface CmsArticlesResponse {
 
 export interface CreateCmsArticleInput extends Record<string, unknown> {
   title?: string;
+  slug?: string;
   summary?: string;
   contentText?: string;
   contentJson?: Record<string, unknown>;
   iconName?: string;
   tags?: string[];
   status?: CmsArticleStatus;
+  language?: CmsArticleLanguage;
+  translationGroupId?: string | null;
+  translatedFromArticleId?: string | null;
 }
 
 export interface UpdateCmsArticleInput extends Record<string, unknown> {
@@ -31,6 +36,9 @@ export interface UpdateCmsArticleInput extends Record<string, unknown> {
   status?: CmsArticleStatus;
   contentText?: string;
   contentJson?: Record<string, unknown>;
+  language?: CmsArticleLanguage;
+  translationGroupId?: string | null;
+  translatedFromArticleId?: string | null;
 }
 
 interface CmsArticleResponse {

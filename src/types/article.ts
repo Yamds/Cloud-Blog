@@ -70,6 +70,9 @@ export interface ArticleComment {
 export interface Article {
   id?: string;
   slug: string;
+  language?: string;
+  translationGroupId?: string | null;
+  translations?: ArticleTranslationLink[];
   title: string;
   summary: string;
   iconName: string;
@@ -87,4 +90,13 @@ export interface Article {
   readingMinutes: number;
   content: ArticleContentBlock[];
   comments: ArticleComment[];
+}
+
+export interface ArticleTranslationLink {
+  id: string;
+  slug: string;
+  title: string;
+  language: "zh" | "en" | string;
+  status?: string;
+  updatedAt?: string;
 }

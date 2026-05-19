@@ -21,6 +21,7 @@ export interface SiteSettings {
   commentsEnabled: boolean;
   analyticsEnabled: boolean;
   navAction: SiteNavActionSettings;
+  navActions: SiteNavActionSettings[];
 }
 
 export interface SiteSettingsInput {
@@ -29,6 +30,7 @@ export interface SiteSettingsInput {
   commentsEnabled?: boolean;
   analyticsEnabled?: boolean;
   navAction?: SiteNavActionSettings;
+  navActions?: SiteNavActionSettings[];
 }
 
 interface SettingRow {
@@ -36,12 +38,15 @@ interface SettingRow {
   value: string;
 }
 
+const MAX_NAV_ACTIONS = 8;
+const DEFAULT_NAV_ACTION = createDefaultNavAction();
 const DEFAULT_SETTINGS: SiteSettings = {
   siteName: "Yamds's Blog",
   siteDescription: "thoughts, craft and code.",
   commentsEnabled: true,
   analyticsEnabled: true,
-  navAction: createDefaultNavAction(),
+  navAction: DEFAULT_NAV_ACTION,
+  navActions: [],
 };
 
 const SETTINGS_KEYS = new Set([
@@ -50,26 +55,30 @@ const SETTINGS_KEYS = new Set([
   "comments_enabled",
   "analytics_enabled",
   "nav_action",
+  "nav_actions",
 ]);
 
 export async function getSiteSettings(db: D1Database): Promise<SiteSettings> {
   const rows = await queryAll<SettingRow>(
-    db.prepare("SELECT key, value FROM site_settings WHERE key IN (?, ?, ?, ?, ?)").bind(
+    db.prepare("SELECT key, value FROM site_settings WHERE key IN (?, ?, ?, ?, ?, ?)").bind(
       "site_name",
       "site_description",
       "comments_enabled",
       "analytics_enabled",
       "nav_action",
+      "nav_actions",
     ),
   );
   const map = new Map(rows.map((row) => [row.key, row.value]));
+  const navActions = readNavActions(map.get("nav_actions"), map.get("nav_action"));
 
   return {
     siteName: map.get("site_name") || DEFAULT_SETTINGS.siteName,
     siteDescription: map.get("site_description") || DEFAULT_SETTINGS.siteDescription,
     commentsEnabled: readBoolean(map.get("comments_enabled"), DEFAULT_SETTINGS.commentsEnabled),
     analyticsEnabled: readBoolean(map.get("analytics_enabled"), DEFAULT_SETTINGS.analyticsEnabled),
-    navAction: readNavAction(map.get("nav_action")),
+    navAction: navActions[0] ?? createDefaultNavAction(),
+    navActions,
   };
 }
 
@@ -112,6 +121,7 @@ export function readSiteSettingsInput(value: unknown): SiteSettingsInput {
   if ("commentsEnabled" in body) input.commentsEnabled = readBooleanField(body.commentsEnabled, "commentsEnabled");
   if ("analyticsEnabled" in body) input.analyticsEnabled = readBooleanField(body.analyticsEnabled, "analyticsEnabled");
   if ("navAction" in body) input.navAction = readNavActionField(body.navAction);
+  if ("navActions" in body) input.navActions = readNavActionsField(body.navActions);
 
   return input;
 }
@@ -131,7 +141,17 @@ function normalizeSettingsInput(input: SiteSettingsInput): Array<[string, string
   if (input.siteDescription !== undefined) entries.push(["site_description", input.siteDescription.trim()]);
   if (input.commentsEnabled !== undefined) entries.push(["comments_enabled", String(input.commentsEnabled)]);
   if (input.analyticsEnabled !== undefined) entries.push(["analytics_enabled", String(input.analyticsEnabled)]);
-  if (input.navAction !== undefined) entries.push(["nav_action", JSON.stringify(input.navAction)]);
+
+  const navActions =
+    input.navActions !== undefined
+      ? normalizeNavActions(input.navActions)
+      : input.navAction !== undefined
+        ? normalizeNavActions([input.navAction])
+        : undefined;
+
+  if (navActions !== undefined) {
+    entries.push(["nav_actions", JSON.stringify(navActions)]);
+  }
 
   for (const [key] of entries) {
     if (!SETTINGS_KEYS.has(key)) {
@@ -155,6 +175,19 @@ function createDefaultNavAction(): SiteNavActionSettings {
   };
 }
 
+function readNavActions(navActionsValue: string | undefined, legacyNavActionValue: string | undefined): SiteNavActionSettings[] {
+  if (navActionsValue) {
+    try {
+      return normalizeNavActions(parseNavActions(JSON.parse(navActionsValue), false));
+    } catch {
+      return [];
+    }
+  }
+
+  const legacyAction = readNavAction(legacyNavActionValue);
+  return legacyAction.enabled ? [legacyAction] : [];
+}
+
 function readNavAction(value: string | undefined): SiteNavActionSettings {
   if (!value) {
     return createDefaultNavAction();
@@ -169,6 +202,37 @@ function readNavAction(value: string | undefined): SiteNavActionSettings {
 
 function readNavActionField(value: unknown): SiteNavActionSettings {
   return parseNavAction(value, true);
+}
+
+function readNavActionsField(value: unknown): SiteNavActionSettings[] {
+  return normalizeNavActions(parseNavActions(value, true));
+}
+
+function parseNavActions(value: unknown, strict: boolean): SiteNavActionSettings[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    if (strict) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navActions must be an array.");
+    }
+
+    return [];
+  }
+
+  return value.map((item) => parseNavAction(item, strict));
+}
+
+function normalizeNavActions(navActions: SiteNavActionSettings[]): SiteNavActionSettings[] {
+  if (navActions.length > MAX_NAV_ACTIONS) {
+    throw new ApiError(400, "VALIDATION_ERROR", `navActions supports at most ${MAX_NAV_ACTIONS} items.`);
+  }
+
+  return navActions.map((action) => ({
+    ...createDefaultNavAction(),
+    ...action,
+  }));
 }
 
 function parseNavAction(value: unknown, strict: boolean): SiteNavActionSettings {

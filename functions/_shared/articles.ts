@@ -14,6 +14,8 @@ interface ArticleRow {
   title: string;
   summary: string | null;
   icon_name: string | null;
+  language: string | null;
+  translation_group_id: string | null;
   tags_csv: string | null;
   published_at: string | null;
   created_at: string;
@@ -24,6 +26,16 @@ interface ArticleRow {
   author_html_url: string | null;
   reading_minutes: number | string | null;
   content_json?: string | null;
+}
+
+interface ArticleTranslationRow {
+  id: string;
+  slug: string;
+  title: string;
+  language: string | null;
+  status: string;
+  translation_group_id: string | null;
+  updated_at: string;
 }
 
 interface RichTextNode {
@@ -72,6 +84,8 @@ const ARTICLE_LIST_SQL = `
     a.title,
     COALESCE(a.summary, '') AS summary,
     COALESCE(a.icon_name, '${DEFAULT_ICON_NAME}') AS icon_name,
+    a.language,
+    a.translation_group_id,
     GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
     a.published_at,
     a.created_at,
@@ -95,6 +109,8 @@ const ARTICLE_LIST_SQL = `
     a.title,
     a.summary,
     a.icon_name,
+    a.language,
+    a.translation_group_id,
     a.published_at,
     a.created_at,
     a.updated_at,
@@ -113,6 +129,8 @@ const ARTICLE_DETAIL_SQL = `
     a.title,
     COALESCE(a.summary, '') AS summary,
     COALESCE(a.icon_name, '${DEFAULT_ICON_NAME}') AS icon_name,
+    a.language,
+    a.translation_group_id,
     GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
     a.published_at,
     a.created_at,
@@ -138,6 +156,8 @@ const ARTICLE_DETAIL_SQL = `
     a.title,
     a.summary,
     a.icon_name,
+    a.language,
+    a.translation_group_id,
     a.published_at,
     a.created_at,
     a.updated_at,
@@ -152,7 +172,8 @@ const ARTICLE_DETAIL_SQL = `
 
 export async function getPublishedArticles(db: D1Database): Promise<Article[]> {
   const rows = await queryAll<ArticleRow>(db.prepare(ARTICLE_LIST_SQL).bind("published"));
-  return rows.map((row) => mapArticleRow(row, false));
+  const translationsMap = await loadPublishedTranslationsMap(db, rows);
+  return rows.map((row) => mapArticleRow(row, false, translationsMap.get(row.id) ?? []));
 }
 
 export async function getPublishedArticleBySlug(
@@ -160,16 +181,28 @@ export async function getPublishedArticleBySlug(
   slug: string,
 ): Promise<Article | null> {
   const row = await queryFirst<ArticleRow>(db.prepare(ARTICLE_DETAIL_SQL).bind("published", slug));
-  return row ? mapArticleRow(row, true) : null;
+  if (!row) {
+    return null;
+  }
+
+  const translationsMap = await loadPublishedTranslationsMap(db, [row]);
+  return mapArticleRow(row, true, translationsMap.get(row.id) ?? []);
 }
 
-export function mapArticleRow(row: ArticleRow, includeContent: boolean): Article {
+export function mapArticleRow(
+  row: ArticleRow,
+  includeContent: boolean,
+  translations: Article["translations"] = [],
+): Article {
   const content = includeContent ? parseContentJson(row.content_json) : [];
   const articleUrl = `/articles/${encodeURIComponent(row.slug)}`;
 
   return {
     id: row.id,
     slug: row.slug,
+    language: normalizeLanguage(row.language),
+    translationGroupId: row.translation_group_id ?? row.id,
+    translations,
     title: row.title,
     summary: row.summary ?? "",
     iconName: row.icon_name ?? DEFAULT_ICON_NAME,
@@ -188,6 +221,60 @@ export function mapArticleRow(row: ArticleRow, includeContent: boolean): Article
     content,
     comments: [],
   };
+}
+
+async function loadPublishedTranslationsMap(
+  db: D1Database,
+  rows: ArticleRow[],
+): Promise<Map<string, NonNullable<Article["translations"]>>> {
+  const groupIds = [...new Set(rows.map((row) => row.translation_group_id ?? row.id).filter(Boolean))];
+  const map = new Map<string, NonNullable<Article["translations"]>>();
+
+  if (groupIds.length === 0) {
+    return map;
+  }
+
+  const placeholders = groupIds.map(() => "?").join(", ");
+  const translationRows = await queryAll<ArticleTranslationRow>(
+    db.prepare(
+      `
+        SELECT id, slug, title, language, status, translation_group_id, updated_at
+        FROM articles
+        WHERE status = 'published'
+          AND translation_group_id IN (${placeholders})
+        ORDER BY updated_at DESC
+      `,
+    ).bind(...groupIds),
+  );
+
+  const groupedById = new Map<string, ArticleTranslationRow[]>();
+  for (const row of translationRows) {
+    const groupId = row.translation_group_id ?? row.id;
+    const current = groupedById.get(groupId) ?? [];
+    current.push(row);
+    groupedById.set(groupId, current);
+  }
+
+  for (const row of rows) {
+    const groupId = row.translation_group_id ?? row.id;
+    const links = (groupedById.get(groupId) ?? [])
+      .filter((item) => item.id !== row.id)
+      .map((item) => ({
+        id: item.id,
+        slug: item.slug,
+        title: item.title,
+        language: normalizeLanguage(item.language),
+        status: item.status,
+        updatedAt: item.updated_at,
+      }));
+    map.set(row.id, links);
+  }
+
+  return map;
+}
+
+function normalizeLanguage(value: string | null | undefined): "zh" | "en" {
+  return value === "en" ? "en" : "zh";
 }
 
 export function parseTags(tagsCsv: string | null | undefined): string[] {

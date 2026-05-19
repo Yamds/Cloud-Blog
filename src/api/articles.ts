@@ -18,6 +18,10 @@ type PublicArticleResponse =
 interface ArticlePayload {
   id?: string | null;
   slug?: string | null;
+  language?: string | null;
+  translationGroupId?: string | null;
+  translation_group_id?: string | null;
+  translations?: unknown;
   title?: string | null;
   summary?: string | null;
   iconName?: string | null;
@@ -406,6 +410,24 @@ const normalizeComment = (value: unknown): ArticleComment | null => {
   };
 };
 
+const normalizeArticleTranslations = (value: unknown): NonNullable<Article["translations"]> => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is JsonRecord => isRecord(item))
+    .map((item) => ({
+      id: normalizeString(item.id),
+      slug: normalizeString(item.slug),
+      title: normalizeString(item.title),
+      language: normalizeString(item.language),
+      status: normalizeString(item.status),
+      updatedAt: normalizeString(item.updatedAt ?? item.updated_at),
+    }))
+    .filter((item) => item.id && item.slug && item.language);
+};
+
 const normalizeComments = (value: unknown) =>
   Array.isArray(value)
     ? value
@@ -635,6 +657,9 @@ const normalizeArticle = (value: unknown): Article | null => {
   const article: Article = {
     id: normalizeString(value.id) || undefined,
     slug,
+    language: normalizeString(value.language) || undefined,
+    translationGroupId: normalizeNullableString(value.translationGroupId ?? value.translation_group_id),
+    translations: normalizeArticleTranslations(value.translations),
     title,
     summary,
     iconName,
@@ -686,14 +711,14 @@ const unwrapArticle = (payload: PublicArticleResponse) => {
   return payload;
 };
 
-export async function getPublishedArticles(): Promise<Article[]> {
+export async function getPublishedArticles(language?: "zh" | "en"): Promise<Article[]> {
   try {
     const payload = await requestJson<PublicArticlesResponse>("/api/articles");
     const articles = unwrapArticleList(payload)
       .map((item) => normalizeArticle(item))
       .filter((item): item is Article => item !== null);
 
-    return articles;
+    return language ? articles.filter((article) => (article.language ?? "zh") === language) : articles;
   } catch (error) {
     if (isMockFallbackError(error)) {
       return mockArticles;

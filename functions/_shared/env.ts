@@ -11,6 +11,7 @@ export interface Env {
   AI_MODEL_FORMAT?: string;
   AI_MODEL_POLISH?: string;
   AI_MODEL_TAGS?: string;
+  AI_MODEL_TRANSLATE?: string;
   AI_ALLOW_UNAUTHENTICATED_DEV?: string;
   AI_DEBUG_LOG_RESPONSE?: string;
   DEV_AUTH_ENABLED?: string;

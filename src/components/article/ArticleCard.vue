@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "../common/IconifyIcon.vue";
 import type { Article } from "../../types/article";
 import { formatShanghaiDate } from "../../utils/date";
@@ -10,13 +11,14 @@ const props = defineProps<{
   to?: string;
 }>();
 
+const { t } = useI18n();
 const articleIcon = computed(() => props.article.icon_name || props.article.iconName);
 const articleLinkTarget = computed(() => props.to);
 const articleLinkProps = computed(() =>
   articleLinkTarget.value
     ? {
         to: articleLinkTarget.value,
-        "aria-label": `阅读文章：${props.article.title}`,
+        "aria-label": t("article.read", { title: props.article.title }),
       }
     : {},
 );

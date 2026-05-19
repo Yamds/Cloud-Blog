@@ -1,10 +1,23 @@
 import { requestJson } from "./http";
 
-export type CmsAiActionKey = "summary" | "polish" | "tags" | "format";
+export type CmsAiActionKey = "summary" | "polish" | "tags" | "format" | "translate";
 
 export interface CmsAiInput extends Record<string, string | undefined> {
   title: string;
   contentText: string;
+  articleId?: string;
+}
+
+export interface CmsAiTranslateInput extends Record<string, unknown> {
+  sourceLanguage?: "zh";
+  targetLanguage?: "en";
+  title: string;
+  summary?: string;
+  contentText?: string;
+  contentJson?: {
+    type: "doc";
+    content: unknown[];
+  };
   articleId?: string;
 }
 
@@ -24,6 +37,17 @@ export interface CmsAiTagsResponse {
 }
 
 export interface CmsAiFormatResponse {
+  contentJson: {
+    type: "doc";
+    content: unknown[];
+  };
+  model: string;
+}
+
+export interface CmsAiTranslateResponse {
+  title: string;
+  summary: string;
+  contentText: string;
   contentJson: {
     type: "doc";
     content: unknown[];
@@ -54,6 +78,13 @@ export function generateTags(input: CmsAiInput): Promise<CmsAiTagsResponse> {
 
 export function formatContent(input: CmsAiInput): Promise<CmsAiFormatResponse> {
   return requestJson<CmsAiFormatResponse>("/api/cms/ai/format", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function translateContent(input: CmsAiTranslateInput): Promise<CmsAiTranslateResponse> {
+  return requestJson<CmsAiTranslateResponse>("/api/cms/ai/translate", {
     method: "POST",
     body: input,
   });

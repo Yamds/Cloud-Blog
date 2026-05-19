@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "../common/IconifyIcon.vue";
 import type { Article } from "../../types/article";
 import { formatShanghaiDate } from "../../utils/date";
 
 defineProps<{ article: Article }>();
 
+const { t } = useI18n();
 const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
 </script>
 
@@ -15,7 +17,7 @@ const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
     <div class="meta">
       <time :datetime="article.publishedAt">{{ formatShanghaiDate(article.publishedAt) }}</time>
       <span>&middot;</span>
-      <span>阅读时长 {{ article.readingMinutes }} 分钟</span>
+      <span>{{ t("article.readingTime", { minutes: article.readingMinutes }) }}</span>
     </div>
     <div class="tags">
       <RouterLink

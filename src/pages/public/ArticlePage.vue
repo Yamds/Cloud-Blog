@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { recordPageView } from "@/api/analytics";
+import { useI18n } from "@/i18n/useI18n";
 import { getSiteSettings } from "@/api/settings";
 import { getArticleBySlug } from "../../api/articles";
 import {
@@ -17,11 +18,16 @@ import ArticleCopyrightInfo from "../../components/article/ArticleCopyrightInfo.
 import CommentSection from "../../components/article/CommentSection.vue";
 import type { Article, ArticleComment } from "../../types/article";
 import { useAuthStore } from "@/stores/auth";
+import { useLanguageStore } from "@/stores/language";
 import { createArticleHeadingId, getArticleBlockText } from "@/utils/articleContent";
 
 const route = useRoute();
+const router = useRouter();
+const { t } = useI18n();
 const authStore = useAuthStore();
+const languageStore = useLanguageStore();
 const { isAdmin, isAuthenticated, isLoading: isAuthLoading, user } = storeToRefs(authStore);
+const { locale } = storeToRefs(languageStore);
 const article = ref<Article>();
 const comments = ref<ArticleComment[]>([]);
 const isLoadingArticle = ref(true);
@@ -234,6 +240,20 @@ watch(
   { immediate: true },
 );
 
+watch(locale, (nextLocale) => {
+  const currentArticle = article.value;
+
+  if (!currentArticle || currentArticle.language === nextLocale) {
+    return;
+  }
+
+  const target = currentArticle.translations?.find((translation) => translation.language === nextLocale);
+
+  if (target) {
+    void router.push(`/articles/${target.slug}`);
+  }
+});
+
 watch(article, () => {
   document.title = article.value ? `${article.value.title} - ${SITE_TITLE}` : SITE_TITLE;
   void nextTick(updateActiveOutline);
@@ -254,7 +274,7 @@ onBeforeUnmount(() => {
     <div v-if="article" class="article-wrapper" :class="{ 'without-outline': outlineItems.length === 0 }">
       <aside v-if="outlineItems.length" class="outline-sidebar">
         <div class="outline-title">
-          <span>目录</span>
+          <span>{{ t("article.outline") }}</span>
         </div>
         <ul class="outline-list">
           <li
@@ -276,7 +296,7 @@ onBeforeUnmount(() => {
       </aside>
 
       <article class="article-container">
-        <RouterLink class="back" to="/articles">返回列表</RouterLink>
+        <RouterLink class="back" to="/articles">{{ t("article.backToList") }}</RouterLink>
         <ArticleHeader :article="article" />
         <div class="divider" />
         <ArticleContent :content="article.content" />
@@ -303,19 +323,19 @@ onBeforeUnmount(() => {
     </div>
 
     <section v-else-if="isLoadingArticle" class="status-state">
-      <p aria-live="polite">文章加载中...</p>
+      <p aria-live="polite">{{ t("article.loading") }}</p>
     </section>
 
     <section v-else-if="articleLoadError" class="status-state status-error">
-      <h1>文章暂时不可用</h1>
+      <h1>{{ t("article.unavailable") }}</h1>
       <p>{{ articleLoadError }}</p>
-      <RouterLink class="back-link" to="/articles">回到文章列表</RouterLink>
+      <RouterLink class="back-link" to="/articles">{{ t("article.backToArticles") }}</RouterLink>
     </section>
 
     <section v-else class="empty-state">
-      <h1>文章不存在</h1>
-      <p>当前 slug 未找到对应内容。</p>
-      <RouterLink class="back-link" to="/articles">回到文章列表</RouterLink>
+      <h1>{{ t("article.notFound") }}</h1>
+      <p>{{ t("article.notFoundDescription") }}</p>
+      <RouterLink class="back-link" to="/articles">{{ t("article.backToArticles") }}</RouterLink>
     </section>
   </main>
 </template>

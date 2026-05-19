@@ -3,6 +3,17 @@ import { ApiError } from "./http";
 
 export type CmsArticleStatus = "draft" | "published" | "archived";
 export type CmsArticleRevisionReason = "manual_save" | "publish" | "archive" | "rollback";
+export type CmsArticleLanguage = "zh" | "en";
+
+export interface CmsArticleTranslationLink {
+  id: string;
+  slug: string;
+  title: string;
+  language: CmsArticleLanguage;
+  status: CmsArticleStatus;
+  translatedFromArticleId: string | null;
+  updatedAt: string;
+}
 
 export interface CmsArticleDetail {
   id: string;
@@ -11,6 +22,10 @@ export interface CmsArticleDetail {
   summary: string;
   iconName: string;
   status: CmsArticleStatus;
+  language: CmsArticleLanguage;
+  translationGroupId: string;
+  translatedFromArticleId: string | null;
+  translations: CmsArticleTranslationLink[];
   tags: string[];
   contentText: string;
   contentJson: Record<string, unknown>;
@@ -51,6 +66,9 @@ export interface CmsArticleInput {
   iconName?: string;
   tags?: string[];
   status?: CmsArticleStatus;
+  language?: CmsArticleLanguage;
+  translationGroupId?: string | null;
+  translatedFromArticleId?: string | null;
   contentText?: string;
   contentJson?: Record<string, unknown>;
 }
@@ -70,12 +88,26 @@ interface CmsArticleRow {
   summary: string | null;
   icon_name: string | null;
   status: CmsArticleStatus;
+  language: string | null;
+  translation_group_id: string | null;
+  translated_from_article_id: string | null;
   tags_csv: string | null;
   content_json: string | null;
   content_text: string | null;
   reading_minutes: number | string | null;
   published_at: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+interface CmsTranslationRow {
+  id: string;
+  slug: string;
+  title: string;
+  language: string | null;
+  status: CmsArticleStatus;
+  translation_group_id: string | null;
+  translated_from_article_id: string | null;
   updated_at: string;
 }
 
@@ -118,6 +150,8 @@ interface CmsAutosaveRow {
 const TAG_SEPARATOR = "\u001f";
 const DEFAULT_TITLE = "未命名文章";
 const DEFAULT_ICON_NAME = "ph:article";
+const DEFAULT_LANGUAGE: CmsArticleLanguage = "zh";
+const VALID_LANGUAGES: CmsArticleLanguage[] = ["zh", "en"];
 
 export async function listCmsArticles(db: D1Database): Promise<CmsArticleDetail[]> {
   const rows = await queryAll<CmsArticleRow>(
@@ -129,6 +163,9 @@ export async function listCmsArticles(db: D1Database): Promise<CmsArticleDetail[
         a.summary,
         a.icon_name,
         a.status,
+        a.language,
+        a.translation_group_id,
+        a.translated_from_article_id,
         GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
         a.content_json,
         a.content_text,
@@ -143,8 +180,9 @@ export async function listCmsArticles(db: D1Database): Promise<CmsArticleDetail[
       ORDER BY a.updated_at DESC
     `),
   );
+  const translationsMap = await loadTranslationsMap(db, rows);
 
-  return rows.map(mapCmsArticleRow);
+  return rows.map((row) => mapCmsArticleRow(row, translationsMap.get(row.id) ?? []));
 }
 
 export async function getCmsArticle(db: D1Database, id: string): Promise<CmsArticleDetail | null> {
@@ -159,6 +197,9 @@ export async function getCmsArticle(db: D1Database, id: string): Promise<CmsArti
             a.summary,
             a.icon_name,
             a.status,
+            a.language,
+            a.translation_group_id,
+            a.translated_from_article_id,
             GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
             a.content_json,
             a.content_text,
@@ -177,7 +218,12 @@ export async function getCmsArticle(db: D1Database, id: string): Promise<CmsArti
       .bind(id),
   );
 
-  return row ? mapCmsArticleRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  const translationsMap = await loadTranslationsMap(db, [row]);
+  return mapCmsArticleRow(row, translationsMap.get(row.id) ?? []);
 }
 
 export async function getCmsStats(db: D1Database): Promise<CmsArticleStats> {
@@ -208,10 +254,20 @@ export async function createCmsArticle(
   input: CmsArticleInput,
 ): Promise<CmsArticleDetail> {
   const now = new Date().toISOString();
+  const id = crypto.randomUUID();
   const title = normalizeTitle(input.title);
   const contentText = normalizeContentText(input.contentText);
   const contentJson = normalizeContentJson(input.contentJson, contentText);
-  const id = crypto.randomUUID();
+  const language = normalizeLanguage(input.language);
+  const translatedFromArticleId = await normalizeTranslatedFromArticleId(db, input.translatedFromArticleId, language);
+  const translationGroupId = await resolveTranslationGroupId(
+    db,
+    input.translationGroupId,
+    translatedFromArticleId,
+    language,
+    id,
+  );
+  await assertTranslationLanguageAvailable(db, translationGroupId, language);
   const slug = await ensureUniqueSlug(db, normalizeSlug(input.slug || title || id));
   const status = normalizeStatus(input.status ?? "draft");
   const publishedAt = status === "published" ? now : null;
@@ -227,6 +283,9 @@ export async function createCmsArticle(
             summary,
             icon_name,
             status,
+            language,
+            translation_group_id,
+            translated_from_article_id,
             reading_minutes,
             content_json,
             content_text,
@@ -236,7 +295,7 @@ export async function createCmsArticle(
             created_at,
             updated_at,
             archived_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
         `,
       )
       .bind(
@@ -246,6 +305,9 @@ export async function createCmsArticle(
         normalizeSummary(input.summary),
         normalizeIconName(input.iconName),
         status,
+        language,
+        translationGroupId,
+        translatedFromArticleId,
         estimateReadingMinutes(contentText),
         JSON.stringify(contentJson),
         contentText,
@@ -265,7 +327,6 @@ export async function createCmsArticle(
   }
 
   await insertArticleRevision(db, article, authorId, "manual_save");
-
   return article;
 }
 
@@ -289,6 +350,20 @@ export async function updateCmsArticle(
   const contentJson =
     input.contentJson !== undefined ? normalizeContentJson(input.contentJson, contentText) : existing.contentJson;
   const status = input.status !== undefined ? normalizeStatus(input.status) : existing.status;
+  const language = input.language !== undefined ? normalizeLanguage(input.language) : existing.language;
+  const translatedFromArticleId =
+    input.translatedFromArticleId !== undefined
+      ? await normalizeTranslatedFromArticleId(db, input.translatedFromArticleId, language, id)
+      : existing.translatedFromArticleId;
+  const translationGroupId = await resolveTranslationGroupId(
+    db,
+    input.translationGroupId !== undefined ? input.translationGroupId : existing.translationGroupId,
+    translatedFromArticleId,
+    language,
+    id,
+  );
+  await assertTranslationLanguageAvailable(db, translationGroupId, language, id);
+
   const nextSlug =
     input.slug !== undefined
       ? await ensureUniqueSlug(db, normalizeSlug(input.slug || title), id)
@@ -307,6 +382,9 @@ export async function updateCmsArticle(
             summary = ?,
             icon_name = ?,
             status = ?,
+            language = ?,
+            translation_group_id = ?,
+            translated_from_article_id = ?,
             reading_minutes = ?,
             content_json = ?,
             content_text = ?,
@@ -322,6 +400,9 @@ export async function updateCmsArticle(
         input.summary !== undefined ? normalizeSummary(input.summary) : existing.summary,
         input.iconName !== undefined ? normalizeIconName(input.iconName) : existing.iconName,
         status,
+        language,
+        translationGroupId,
+        translatedFromArticleId,
         estimateReadingMinutes(contentText),
         JSON.stringify(contentJson),
         contentText,
@@ -435,6 +516,9 @@ export async function deleteCmsArticle(db: D1Database, id: string): Promise<void
   await runStatement(db.prepare("UPDATE page_views SET article_id = NULL WHERE article_id = ?").bind(id));
   await runStatement(db.prepare("UPDATE media_objects SET article_id = NULL WHERE article_id = ?").bind(id));
   await runStatement(db.prepare("UPDATE ai_outputs SET article_id = NULL WHERE article_id = ?").bind(id));
+  await runStatement(
+    db.prepare("UPDATE articles SET translated_from_article_id = NULL WHERE translated_from_article_id = ?").bind(id),
+  );
 
   await runStatement(db.prepare("DELETE FROM comments WHERE article_id = ?").bind(id));
   await runStatement(db.prepare("DELETE FROM article_autosaves WHERE article_id = ?").bind(id));
@@ -574,6 +658,9 @@ export function readCmsArticleInput(value: unknown): CmsArticleInput {
   if ("contentText" in body) input.contentText = readOptionalString(body.contentText, 100_000);
   if ("contentJson" in body && body.contentJson !== undefined) input.contentJson = readContentJson(body.contentJson);
   if ("status" in body && body.status !== undefined) input.status = normalizeStatus(String(body.status));
+  if ("language" in body && body.language !== undefined) input.language = normalizeLanguage(body.language);
+  if ("translationGroupId" in body) input.translationGroupId = readOptionalNullableId(body.translationGroupId);
+  if ("translatedFromArticleId" in body) input.translatedFromArticleId = readOptionalNullableId(body.translatedFromArticleId);
   if ("tags" in body && body.tags !== undefined) input.tags = readTags(body.tags);
 
   return input;
@@ -587,7 +674,10 @@ export async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-function mapCmsArticleRow(row: CmsArticleRow): CmsArticleDetail {
+function mapCmsArticleRow(row: CmsArticleRow, translations: CmsArticleTranslationLink[]): CmsArticleDetail {
+  const language = normalizeLanguage(row.language);
+  const translationGroupId = normalizeStoredTranslationGroupId(row.translation_group_id, row.id);
+
   return {
     id: row.id,
     slug: row.slug,
@@ -595,6 +685,10 @@ function mapCmsArticleRow(row: CmsArticleRow): CmsArticleDetail {
     summary: row.summary ?? "",
     iconName: row.icon_name ?? DEFAULT_ICON_NAME,
     status: row.status,
+    language,
+    translationGroupId,
+    translatedFromArticleId: row.translated_from_article_id ?? null,
+    translations,
     tags: parseTags(row.tags_csv),
     contentText: row.content_text ?? "",
     contentJson: parseContentJson(row.content_json, row.content_text ?? ""),
@@ -631,6 +725,64 @@ function mapAutosaveRow(row: CmsAutosaveRow): CmsArticleAutosave {
     tags: parseTagsJson(row.tags_json),
     createdAt: row.created_at,
   };
+}
+
+async function loadTranslationsMap(
+  db: D1Database,
+  rows: CmsArticleRow[],
+): Promise<Map<string, CmsArticleTranslationLink[]>> {
+  const translationKeys = [...new Set(rows.map((row) => normalizeStoredTranslationGroupId(row.translation_group_id, row.id)))];
+  const map = new Map<string, CmsArticleTranslationLink[]>();
+
+  if (translationKeys.length === 0) {
+    return map;
+  }
+
+  const placeholders = translationKeys.map(() => "?").join(", ");
+  const translationRows = await queryAll<CmsTranslationRow>(
+    db.prepare(
+      `
+        SELECT
+          id,
+          slug,
+          title,
+          language,
+          status,
+          translation_group_id,
+          translated_from_article_id,
+          updated_at
+        FROM articles
+        WHERE translation_group_id IN (${placeholders})
+        ORDER BY updated_at DESC
+      `,
+    ).bind(...translationKeys),
+  );
+
+  const grouped = new Map<string, CmsTranslationRow[]>();
+  for (const row of translationRows) {
+    const key = normalizeStoredTranslationGroupId(row.translation_group_id, row.id);
+    const current = grouped.get(key) ?? [];
+    current.push(row);
+    grouped.set(key, current);
+  }
+
+  for (const row of rows) {
+    const key = normalizeStoredTranslationGroupId(row.translation_group_id, row.id);
+    const links = (grouped.get(key) ?? [])
+      .filter((item) => item.id !== row.id)
+      .map((item) => ({
+        id: item.id,
+        slug: item.slug,
+        title: item.title,
+        language: normalizeLanguage(item.language),
+        status: item.status,
+        translatedFromArticleId: item.translated_from_article_id ?? null,
+        updatedAt: item.updated_at,
+      }));
+    map.set(row.id, links);
+  }
+
+  return map;
 }
 
 async function syncArticleTags(db: D1Database, articleId: string, tags: string[]): Promise<void> {
@@ -773,6 +925,19 @@ function normalizeStatus(value: string): CmsArticleStatus {
   throw new ApiError(400, "VALIDATION_ERROR", "Invalid article status.");
 }
 
+function normalizeLanguage(value: unknown): CmsArticleLanguage {
+  if (typeof value !== "string") {
+    return DEFAULT_LANGUAGE;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (VALID_LANGUAGES.includes(normalized as CmsArticleLanguage)) {
+    return normalized as CmsArticleLanguage;
+  }
+
+  throw new ApiError(400, "VALIDATION_ERROR", "language must be zh or en.");
+}
+
 function normalizeSlug(value: string): string {
   const slug = value
     .trim()
@@ -795,6 +960,21 @@ function readOptionalString(value: unknown, maxLength: number): string | undefin
   }
 
   return value.slice(0, maxLength);
+}
+
+function readOptionalNullableId(value: unknown): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new ApiError(400, "VALIDATION_ERROR", "Expected string identifier.");
+  }
+
+  const normalized = value.trim().slice(0, 120);
+  return normalized || null;
 }
 
 function readContentJson(value: unknown): Record<string, unknown> {
@@ -876,6 +1056,126 @@ function parseTagsJson(raw: string | null | undefined): string[] {
 function normalizeNumber(value: number | string | null | undefined): number {
   const numericValue = typeof value === "string" ? Number(value) : value;
   return typeof numericValue === "number" && Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function normalizeStoredTranslationGroupId(value: string | null | undefined, fallbackId: string): string {
+  const normalized = value?.trim();
+  return normalized || fallbackId;
+}
+
+async function normalizeTranslatedFromArticleId(
+  db: D1Database,
+  value: string | null | undefined,
+  language: CmsArticleLanguage,
+  currentArticleId?: string,
+): Promise<string | null> {
+  if (value === undefined || value === null || value === "") {
+    if (language === "zh") {
+      return null;
+    }
+
+    return null;
+  }
+
+  const normalized = value.trim();
+  const row = await queryFirst<{
+    id: string;
+    language: string | null;
+    translation_group_id: string | null;
+  }>(
+    db
+      .prepare(
+        `
+          SELECT id, language, translation_group_id
+          FROM articles
+          WHERE id = ?
+          LIMIT 1
+        `,
+      )
+      .bind(normalized),
+  );
+
+  if (!row) {
+    throw new ApiError(400, "VALIDATION_ERROR", "translatedFromArticleId does not exist.");
+  }
+
+  if (row.id === currentArticleId) {
+    throw new ApiError(400, "VALIDATION_ERROR", "translatedFromArticleId cannot point to the same article.");
+  }
+
+  if (language === "zh") {
+    throw new ApiError(400, "VALIDATION_ERROR", "Chinese articles cannot set translatedFromArticleId.");
+  }
+
+  if (normalizeLanguage(row.language) !== "zh") {
+    throw new ApiError(400, "VALIDATION_ERROR", "translatedFromArticleId must point to a Chinese article.");
+  }
+
+  return row.id;
+}
+
+async function resolveTranslationGroupId(
+  db: D1Database,
+  requestedGroupId: string | null | undefined,
+  translatedFromArticleId: string | null,
+  language: CmsArticleLanguage,
+  fallbackArticleId: string,
+): Promise<string> {
+  if (translatedFromArticleId) {
+    const source = await queryFirst<{ translation_group_id: string | null }>(
+      db
+        .prepare("SELECT translation_group_id FROM articles WHERE id = ? LIMIT 1")
+        .bind(translatedFromArticleId),
+    );
+    return normalizeStoredTranslationGroupId(source?.translation_group_id, translatedFromArticleId);
+  }
+
+  const normalizedRequested = requestedGroupId?.trim();
+
+  if (normalizedRequested) {
+    const groupOwner = await queryFirst<{ id: string }>(
+      db
+        .prepare("SELECT id FROM articles WHERE translation_group_id = ? LIMIT 1")
+        .bind(normalizedRequested),
+    );
+
+    if (!groupOwner) {
+      throw new ApiError(400, "VALIDATION_ERROR", "translationGroupId does not exist.");
+    }
+
+    return normalizedRequested;
+  }
+
+  if (language === "zh") {
+    return fallbackArticleId;
+  }
+
+  return fallbackArticleId;
+}
+
+async function assertTranslationLanguageAvailable(
+  db: D1Database,
+  translationGroupId: string,
+  language: CmsArticleLanguage,
+  currentArticleId?: string,
+): Promise<void> {
+  const row = await queryFirst<{ id: string }>(
+    db
+      .prepare(
+        `
+          SELECT id
+          FROM articles
+          WHERE translation_group_id = ?
+            AND language = ?
+          LIMIT 1
+        `,
+      )
+      .bind(translationGroupId, language),
+  );
+
+  if (row && row.id !== currentArticleId) {
+    throw new ApiError(409, "CONFLICT", `An article with language ${language} already exists in this translation group.`);
+  }
 }
 
 async function runStatement(statement: D1PreparedStatement): Promise<void> {

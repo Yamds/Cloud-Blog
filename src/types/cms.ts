@@ -1,4 +1,5 @@
 export type CmsArticleStatus = "draft" | "published" | "archived";
+export type CmsArticleLanguage = "zh" | "en";
 export type CmsStorageObjectType = "image" | "attachment";
 export type CmsStorageObjectStatus = "ready" | "processing" | "orphaned" | "error";
 export type CmsStorageRelationFilter = "all" | "linked" | "unlinked";
@@ -70,12 +71,26 @@ export interface CmsArticleDetail {
   summary: string;
   iconName: string;
   status: CmsArticleStatus;
+  language: CmsArticleLanguage;
+  translationGroupId: string;
+  translatedFromArticleId: string | null;
+  translations: CmsArticleTranslationLink[];
   tags: string[];
   contentText: string;
   contentJson: Record<string, unknown>;
   readingMinutes: number;
   publishedAt: string | null;
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface CmsArticleTranslationLink {
+  id: string;
+  slug: string;
+  title: string;
+  language: CmsArticleLanguage;
+  status: CmsArticleStatus;
+  translatedFromArticleId: string | null;
   updatedAt: string;
 }
 
@@ -97,6 +112,8 @@ export interface CmsArticleAutosave {
   articleId: string;
   title: string;
   iconName: string;
+  summary?: string;
+  slug?: string;
   contentText: string;
   contentJson: Record<string, unknown>;
   tags: string[];
@@ -121,6 +138,13 @@ export interface CmsEditorDraft {
   content: string;
   contentJson: Record<string, unknown>;
   publishInfo: CmsPublishInfo;
+}
+
+export interface CmsLocalizedContentDraft {
+  title: string;
+  summary: string;
+  content: string;
+  contentJson: Record<string, unknown>;
 }
 
 export interface CmsAiAction {
@@ -259,4 +283,5 @@ export interface SiteSettings {
   commentsEnabled: boolean;
   analyticsEnabled: boolean;
   navAction: SiteNavActionSettings;
+  navActions: SiteNavActionSettings[];
 }

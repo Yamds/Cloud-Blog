@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
+import { useI18n } from "@/i18n/useI18n";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleCard from "../../components/article/ArticleCard.vue";
 import IconifyIcon from "../../components/common/IconifyIcon.vue";
+import { useLanguageStore } from "@/stores/language";
 import type { Article } from "../../types/article";
 
+const { t } = useI18n();
+const languageStore = useLanguageStore();
+const { locale } = storeToRefs(languageStore);
 const heroRef = ref<HTMLElement | null>(null);
 const articleListRef = ref<HTMLElement | null>(null);
 const prefersReducedMotion = ref(false);
@@ -115,7 +121,7 @@ const loadArticles = async () => {
   articlesLoadError.value = "";
 
   try {
-    articles.value = await getPublishedArticles();
+    articles.value = await getPublishedArticles(locale.value);
   } catch (error) {
     articles.value = [];
     articlesLoadError.value =
@@ -130,6 +136,10 @@ onMounted(() => {
   prefersReducedMotion.value = motionQuery.matches;
   motionQuery.addEventListener("change", handleMotionChange);
   window.addEventListener("wheel", handleWheel, { passive: false });
+  void loadArticles();
+});
+
+watch(locale, () => {
   void loadArticles();
 });
 
@@ -150,8 +160,8 @@ onBeforeUnmount(() => {
       <button
         class="hero-scroll-hint"
         type="button"
-        aria-label="滚动到文章列表"
-        title="滚动到文章列表"
+        :aria-label="t('home.scrollToArticles')"
+        :title="t('home.scrollToArticles')"
         @click="scrollToArticles"
       >
         <IconifyIcon icon="ph:caret-down" :size="24" aria-hidden="true" />
@@ -159,10 +169,10 @@ onBeforeUnmount(() => {
     </section>
 
     <section ref="articleListRef" class="article-list">
-      <h2 class="section-title">Recent Writings</h2>
-      <p v-if="isLoadingArticles" class="status-copy" aria-live="polite">文章加载中...</p>
+      <h2 class="section-title">{{ t("home.recentWritings") }}</h2>
+      <p v-if="isLoadingArticles" class="status-copy" aria-live="polite">{{ t("home.loading") }}</p>
       <p v-else-if="articlesLoadError" class="status-copy status-error">{{ articlesLoadError }}</p>
-      <p v-else-if="featuredArticles.length === 0" class="status-copy">公开文章还在整理中。</p>
+      <p v-else-if="featuredArticles.length === 0" class="status-copy">{{ t("home.empty") }}</p>
       <div v-else class="timeline">
         <ArticleCard
           v-for="article in featuredArticles"
