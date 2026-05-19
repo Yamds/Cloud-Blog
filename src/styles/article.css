@@ -1,0 +1,116 @@
+.article-content {
+  color: var(--text-secondary);
+  font-family: var(--font-article);
+  line-height: 1.9;
+  font-size: 16px;
+  text-wrap: pretty;
+}
+
+.article-content > * + * {
+  margin-top: var(--space-3);
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3,
+.article-content h4,
+.article-content h5,
+.article-content h6 {
+  color: var(--text-primary);
+  font-family: var(--font-article);
+  line-height: 1.4;
+}
+
+.article-content h1,
+.article-content h2 {
+  font-family: var(--font-article);
+}
+
+.article-content p {
+  margin: 0;
+}
+
+.article-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.article-content a:hover {
+  color: var(--accent-hover);
+}
+
+.article-content ul,
+.article-content ol {
+  padding-left: var(--space-3);
+}
+
+.article-content li + li {
+  margin-top: var(--space-1);
+}
+
+.article-content blockquote {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.article-content hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.article-content pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.article-content pre code {
+  font-size: inherit;
+}
+
+.article-content :not(pre) > code {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.article-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+}
+
+.article-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.article-content th,
+.article-content td {
+  border: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.article-content th {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-weight: 600;
+}

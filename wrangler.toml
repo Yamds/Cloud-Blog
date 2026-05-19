@@ -1,0 +1,19 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "cloud-blog"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-05-17"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloud-blog"
+# Replace with the real D1 database UUID from Cloudflare before remote migrate/deploy.
+database_id = "4d23e033-545a-4926-a790-9ec978ef0f36"
+# Required by Cloudflare Pages local D1 development; keep it matching the binding name.
+preview_database_id = "DB"
+migrations_dir = "./migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+# Replace bucket names if your Cloudflare account uses different R2 bucket names.
+bucket_name = "cloud-blog-media"
+preview_bucket_name = "cloud-blog-media-preview"
