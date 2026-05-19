@@ -16,6 +16,7 @@ type PublicArticleResponse =
   | { article?: ArticlePayload | null; data?: ArticlePayload | null };
 
 interface ArticlePayload {
+  id?: string | null;
   slug?: string | null;
   title?: string | null;
   summary?: string | null;
@@ -25,6 +26,21 @@ interface ArticlePayload {
   tags_json?: unknown;
   publishedAt?: string | null;
   published_at?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+  updatedAt?: string | null;
+  updated_at?: string | null;
+  articleUrl?: string | null;
+  article_url?: string | null;
+  url?: string | null;
+  authorId?: string | null;
+  author_id?: string | null;
+  authorName?: string | null;
+  author_name?: string | null;
+  authorAvatar?: string | null;
+  author_avatar?: string | null;
+  authorHtmlUrl?: string | null;
+  author_html_url?: string | null;
   readingMinutes?: number | null;
   reading_minutes?: number | null;
   content?: unknown;
@@ -64,6 +80,15 @@ const isMockFallbackError = (error: unknown) =>
 
 const normalizeString = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.trim() : fallback;
+
+const normalizeNullableString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized || null;
+};
 
 const normalizeStringArray = (value: unknown): string[] => {
   if (Array.isArray(value)) {
@@ -608,6 +633,7 @@ const normalizeArticle = (value: unknown): Article | null => {
   const iconName = normalizeString(value.iconName ?? value.icon_name, "ph:article");
 
   const article: Article = {
+    id: normalizeString(value.id) || undefined,
     slug,
     title,
     summary,
@@ -615,6 +641,14 @@ const normalizeArticle = (value: unknown): Article | null => {
     icon_name: iconName,
     tags: normalizeStringArray(value.tags ?? value.tags_json),
     publishedAt: normalizeString(value.publishedAt ?? value.published_at),
+    createdAt: normalizeString(value.createdAt ?? value.created_at) || undefined,
+    updatedAt: normalizeString(value.updatedAt ?? value.updated_at) || undefined,
+    articleUrl: normalizeString(value.articleUrl ?? value.article_url ?? value.url) || `/articles/${encodeURIComponent(slug)}`,
+    url: normalizeString(value.url ?? value.articleUrl ?? value.article_url) || `/articles/${encodeURIComponent(slug)}`,
+    authorId: normalizeNullableString(value.authorId ?? value.author_id),
+    authorName: normalizeString(value.authorName ?? value.author_name) || undefined,
+    authorAvatar: normalizeNullableString(value.authorAvatar ?? value.author_avatar),
+    authorHtmlUrl: normalizeNullableString(value.authorHtmlUrl ?? value.author_html_url),
     readingMinutes: normalizeNumber(value.readingMinutes ?? value.reading_minutes) ?? 0,
     content,
     comments: normalizeComments(value.comments),

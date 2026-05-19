@@ -68,6 +68,7 @@ export interface ArticleComment {
 }
 
 export interface Article {
+  id?: string;
   slug: string;
   title: string;
   summary: string;
@@ -75,6 +76,14 @@ export interface Article {
   icon_name: string;
   tags: string[];
   publishedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+  articleUrl?: string;
+  url?: string;
+  authorId?: string | null;
+  authorName?: string;
+  authorAvatar?: string | null;
+  authorHtmlUrl?: string | null;
   readingMinutes: number;
   content: ArticleContentBlock[];
   comments: ArticleComment[];

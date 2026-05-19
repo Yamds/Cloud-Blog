@@ -6,10 +6,12 @@ import type { CmsArticleRow } from "@/types/cms";
 defineProps<{
   articles: CmsArticleRow[];
   archiveDisabled?: boolean;
+  deleteDisabled?: boolean;
 }>();
 
 defineEmits<{
   archive: [id: string];
+  delete: [article: CmsArticleRow];
 }>();
 
 const statusMap = {
@@ -50,6 +52,16 @@ const statusMap = {
         >
           <IconifyIcon icon="ph:archive" />
         </button>
+        <button
+          type="button"
+          class="action-btn danger"
+          title="删除"
+          aria-label="删除"
+          :disabled="deleteDisabled"
+          @click="$emit('delete', article)"
+        >
+          <IconifyIcon icon="ph:trash" />
+        </button>
       </div>
     </div>
     <p v-if="articles.length === 0" class="empty-row">暂无文章。</p>
@@ -58,7 +70,7 @@ const statusMap = {
 
 <style scoped>
 .table-wrap { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden; }
-.table-head,.table-row { display: grid; grid-template-columns: 64px 1fr 120px 120px 96px; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); }
+.table-head,.table-row { display: grid; grid-template-columns: 64px 1fr 120px 120px 136px; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); }
 .table-head { font-size: 13px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border-subtle); }
 .table-row { border-bottom: 1px solid var(--border-subtle); }
 .table-row:last-child { border-bottom: 0; }
@@ -70,6 +82,8 @@ time { color: var(--text-secondary); font-family: var(--font-heading); }
 .status.published { color: var(--accent); border-color: var(--accent); }
 .actions { display: flex; gap: 8px; }
 .action-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.action-btn.danger:hover:not(:disabled),
+.action-btn.danger:focus-visible:not(:disabled) { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 48%, var(--border)); }
 .action-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 @media (max-width: 1024px) {
   .table-head,.table-row { grid-template-columns: 56px 1fr 120px; }

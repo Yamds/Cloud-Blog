@@ -239,9 +239,24 @@ export interface CmsComment {
   repliesCount: number;
 }
 
+export type SiteNavActionVariant = "icon" | "text";
+export type SiteNavActionTargetType = "external" | "article";
+
+export interface SiteNavActionSettings {
+  enabled: boolean;
+  variant: SiteNavActionVariant;
+  label: string;
+  iconName: string;
+  tooltip: string;
+  targetType: SiteNavActionTargetType;
+  href: string;
+  articlePath: string;
+}
+
 export interface SiteSettings {
   siteName: string;
   siteDescription: string;
   commentsEnabled: boolean;
   analyticsEnabled: boolean;
+  navAction: SiteNavActionSettings;
 }

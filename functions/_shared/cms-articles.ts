@@ -425,6 +425,24 @@ export async function createArticleAutosave(
   return autosave;
 }
 
+export async function deleteCmsArticle(db: D1Database, id: string): Promise<void> {
+  const existing = await getCmsArticle(db, id);
+
+  if (!existing) {
+    throw new ApiError(404, "NOT_FOUND", "Article not found.");
+  }
+
+  await runStatement(db.prepare("UPDATE page_views SET article_id = NULL WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("UPDATE media_objects SET article_id = NULL WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("UPDATE ai_outputs SET article_id = NULL WHERE article_id = ?").bind(id));
+
+  await runStatement(db.prepare("DELETE FROM comments WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("DELETE FROM article_autosaves WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("DELETE FROM article_revisions WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("DELETE FROM article_tags WHERE article_id = ?").bind(id));
+  await runStatement(db.prepare("DELETE FROM articles WHERE id = ?").bind(id));
+}
+
 export async function getLatestArticleAutosave(
   db: D1Database,
   id: string,

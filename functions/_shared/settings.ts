@@ -1,11 +1,26 @@
 import { queryAll } from "./d1";
 import { ApiError } from "./http";
 
+export type SiteNavActionVariant = "icon" | "text";
+export type SiteNavActionTargetType = "external" | "article";
+
+export interface SiteNavActionSettings {
+  enabled: boolean;
+  variant: SiteNavActionVariant;
+  label: string;
+  iconName: string;
+  tooltip: string;
+  targetType: SiteNavActionTargetType;
+  href: string;
+  articlePath: string;
+}
+
 export interface SiteSettings {
   siteName: string;
   siteDescription: string;
   commentsEnabled: boolean;
   analyticsEnabled: boolean;
+  navAction: SiteNavActionSettings;
 }
 
 export interface SiteSettingsInput {
@@ -13,6 +28,7 @@ export interface SiteSettingsInput {
   siteDescription?: string;
   commentsEnabled?: boolean;
   analyticsEnabled?: boolean;
+  navAction?: SiteNavActionSettings;
 }
 
 interface SettingRow {
@@ -25,6 +41,7 @@ const DEFAULT_SETTINGS: SiteSettings = {
   siteDescription: "thoughts, craft and code.",
   commentsEnabled: true,
   analyticsEnabled: true,
+  navAction: createDefaultNavAction(),
 };
 
 const SETTINGS_KEYS = new Set([
@@ -32,15 +49,17 @@ const SETTINGS_KEYS = new Set([
   "site_description",
   "comments_enabled",
   "analytics_enabled",
+  "nav_action",
 ]);
 
 export async function getSiteSettings(db: D1Database): Promise<SiteSettings> {
   const rows = await queryAll<SettingRow>(
-    db.prepare("SELECT key, value FROM site_settings WHERE key IN (?, ?, ?, ?)").bind(
+    db.prepare("SELECT key, value FROM site_settings WHERE key IN (?, ?, ?, ?, ?)").bind(
       "site_name",
       "site_description",
       "comments_enabled",
       "analytics_enabled",
+      "nav_action",
     ),
   );
   const map = new Map(rows.map((row) => [row.key, row.value]));
@@ -50,6 +69,7 @@ export async function getSiteSettings(db: D1Database): Promise<SiteSettings> {
     siteDescription: map.get("site_description") || DEFAULT_SETTINGS.siteDescription,
     commentsEnabled: readBoolean(map.get("comments_enabled"), DEFAULT_SETTINGS.commentsEnabled),
     analyticsEnabled: readBoolean(map.get("analytics_enabled"), DEFAULT_SETTINGS.analyticsEnabled),
+    navAction: readNavAction(map.get("nav_action")),
   };
 }
 
@@ -91,6 +111,7 @@ export function readSiteSettingsInput(value: unknown): SiteSettingsInput {
   if ("siteDescription" in body) input.siteDescription = readOptionalString(body.siteDescription, 300);
   if ("commentsEnabled" in body) input.commentsEnabled = readBooleanField(body.commentsEnabled, "commentsEnabled");
   if ("analyticsEnabled" in body) input.analyticsEnabled = readBooleanField(body.analyticsEnabled, "analyticsEnabled");
+  if ("navAction" in body) input.navAction = readNavActionField(body.navAction);
 
   return input;
 }
@@ -110,6 +131,7 @@ function normalizeSettingsInput(input: SiteSettingsInput): Array<[string, string
   if (input.siteDescription !== undefined) entries.push(["site_description", input.siteDescription.trim()]);
   if (input.commentsEnabled !== undefined) entries.push(["comments_enabled", String(input.commentsEnabled)]);
   if (input.analyticsEnabled !== undefined) entries.push(["analytics_enabled", String(input.analyticsEnabled)]);
+  if (input.navAction !== undefined) entries.push(["nav_action", JSON.stringify(input.navAction)]);
 
   for (const [key] of entries) {
     if (!SETTINGS_KEYS.has(key)) {
@@ -118,6 +140,91 @@ function normalizeSettingsInput(input: SiteSettingsInput): Array<[string, string
   }
 
   return entries;
+}
+
+function createDefaultNavAction(): SiteNavActionSettings {
+  return {
+    enabled: false,
+    variant: "icon",
+    label: "",
+    iconName: "",
+    tooltip: "",
+    targetType: "external",
+    href: "",
+    articlePath: "",
+  };
+}
+
+function readNavAction(value: string | undefined): SiteNavActionSettings {
+  if (!value) {
+    return createDefaultNavAction();
+  }
+
+  try {
+    return parseNavAction(JSON.parse(value), false);
+  } catch {
+    return createDefaultNavAction();
+  }
+}
+
+function readNavActionField(value: unknown): SiteNavActionSettings {
+  return parseNavAction(value, true);
+}
+
+function parseNavAction(value: unknown, strict: boolean): SiteNavActionSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (strict) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navAction must be an object.");
+    }
+
+    return createDefaultNavAction();
+  }
+
+  const body = value as Record<string, unknown>;
+  const defaults = createDefaultNavAction();
+  const navAction: SiteNavActionSettings = {
+    enabled: "enabled" in body ? readBooleanField(body.enabled, "navAction.enabled") : defaults.enabled,
+    variant: readEnumField(body.variant, ["icon", "text"], "navAction.variant", defaults.variant, strict),
+    label: "label" in body ? readOptionalString(body.label, 40).trim() : defaults.label,
+    iconName: "iconName" in body ? readOptionalString(body.iconName, 80).trim() : defaults.iconName,
+    tooltip: "tooltip" in body ? readOptionalString(body.tooltip, 120).trim() : defaults.tooltip,
+    targetType: readEnumField(body.targetType, ["external", "article"], "navAction.targetType", defaults.targetType, strict),
+    href: "href" in body ? readOptionalString(body.href, 300).trim() : defaults.href,
+    articlePath: "articlePath" in body ? readOptionalString(body.articlePath, 300).trim() : defaults.articlePath,
+  };
+
+  if (navAction.href && !isExternalUrl(navAction.href)) {
+    if (strict) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navAction.href must start with http:// or https://.");
+    }
+
+    navAction.href = "";
+  }
+
+  if (navAction.enabled) {
+    if (navAction.variant === "icon") {
+      if (!navAction.iconName) {
+        throw new ApiError(400, "VALIDATION_ERROR", "navAction.iconName is required for icon buttons.");
+      }
+      if (!navAction.tooltip) {
+        throw new ApiError(400, "VALIDATION_ERROR", "navAction.tooltip is required for icon buttons.");
+      }
+    }
+
+    if (navAction.variant === "text" && !navAction.label) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navAction.label is required for text buttons.");
+    }
+
+    if (navAction.targetType === "external" && !navAction.href) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navAction.href is required for external links.");
+    }
+
+    if (navAction.targetType === "article" && !navAction.articlePath) {
+      throw new ApiError(400, "VALIDATION_ERROR", "navAction.articlePath is required for article links.");
+    }
+  }
+
+  return navAction;
 }
 
 function readOptionalString(value: unknown, maxLength: number): string {
@@ -144,6 +251,32 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
   return fallback;
+}
+
+function readEnumField<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  field: string,
+  fallback: T,
+  strict: boolean,
+): T {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    if (strict) {
+      throw new ApiError(400, "VALIDATION_ERROR", `${field} is invalid.`);
+    }
+
+    return fallback;
+  }
+
+  return value as T;
+}
+
+function isExternalUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
 }
 
 async function runStatement(statement: D1PreparedStatement): Promise<void> {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
-import { archiveCmsArticle, getCmsArticles } from "@/api/cms";
+import { archiveCmsArticle, deleteCmsArticle, getCmsArticles } from "@/api/cms";
 import { getCmsAnalyticsSummary } from "@/api/analytics";
 import { isApiError } from "@/api/http";
 import ArticlesTable from "@/components/cms/ArticlesTable.vue";
@@ -15,10 +15,12 @@ const stats = ref<CmsStatItem[]>(createEmptyStats());
 const analyticsSummary = ref<CmsAnalyticsSummary | null>(null);
 const loading = ref(true);
 const archiveBusyId = ref<string | null>(null);
+const deleteBusyId = ref<string | null>(null);
 const fallbackNotice = ref("");
 const actionNotice = ref("");
 
-const archiveDisabled = computed(() => loading.value || Boolean(archiveBusyId.value));
+const archiveDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));
+const deleteDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));
 const analyticsMaxViews = computed(() =>
   Math.max(...(analyticsSummary.value?.dailyViews.map((item) => item.views) ?? [0]), 1),
 );
@@ -128,6 +130,27 @@ async function handleArchive(id: string): Promise<void> {
   }
 }
 
+async function handleDelete(article: CmsArticleRow): Promise<void> {
+  const confirmed = window.confirm(`确认删除《${article.title}》吗？此操作会移除文章及相关草稿、版本和评论。`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  deleteBusyId.value = article.id;
+  actionNotice.value = "";
+
+  try {
+    await deleteCmsArticle(article.id);
+    await loadDashboard();
+    actionNotice.value = "文章已删除。";
+  } catch (error) {
+    actionNotice.value = isApiError(error) ? error.message : "删除失败，请稍后重试。";
+  } finally {
+    deleteBusyId.value = null;
+  }
+}
+
 onMounted(() => {
   void loadDashboard();
 });
@@ -230,7 +253,13 @@ function formatAnalyticsDayLabel(value: string): string {
           <RouterLink class="primary-action" to="/cms/articles/new">新建文章</RouterLink>
         </div>
       </div>
-      <ArticlesTable :articles="articles" :archive-disabled="archiveDisabled" @archive="handleArchive" />
+      <ArticlesTable
+        :articles="articles"
+        :archive-disabled="archiveDisabled"
+        :delete-disabled="deleteDisabled"
+        @archive="handleArchive"
+        @delete="handleDelete"
+      />
     </section>
   </CmsShell>
 </template>

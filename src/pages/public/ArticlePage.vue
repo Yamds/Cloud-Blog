@@ -13,6 +13,7 @@ import {
 } from "../../api/comments";
 import ArticleHeader from "../../components/article/ArticleHeader.vue";
 import ArticleContent from "../../components/article/ArticleContent.vue";
+import ArticleCopyrightInfo from "../../components/article/ArticleCopyrightInfo.vue";
 import CommentSection from "../../components/article/CommentSection.vue";
 import type { Article, ArticleComment } from "../../types/article";
 import { useAuthStore } from "@/stores/auth";
@@ -25,13 +26,13 @@ const article = ref<Article>();
 const comments = ref<ArticleComment[]>([]);
 const isLoadingArticle = ref(true);
 const isLoadingComments = ref(false);
-const isRefreshingComments = ref(false);
 const isSubmittingComment = ref(false);
 const submittingReplyToId = ref("");
 const deletingCommentId = ref("");
 const articleLoadError = ref("");
 const commentsError = ref("");
 const commentsEnabled = ref(true);
+const siteOrigin = ref("");
 const activeHeadingId = ref("");
 const lastRecordedPageViewSlug = ref("");
 const OUTLINE_SCROLL_EXTRA_GAP = 24;
@@ -58,13 +59,10 @@ const loadComments = async (targetSlug: string, options: { silent?: boolean } = 
     comments.value = [];
     commentsError.value = "";
     isLoadingComments.value = false;
-    isRefreshingComments.value = false;
     return;
   }
 
-  if (options.silent) {
-    isRefreshingComments.value = true;
-  } else {
+  if (!options.silent) {
     isLoadingComments.value = true;
   }
 
@@ -77,7 +75,6 @@ const loadComments = async (targetSlug: string, options: { silent?: boolean } = 
     commentsError.value = getErrorMessage(error, "评论暂时无法加载，请稍后再试。");
   } finally {
     isLoadingComments.value = false;
-    isRefreshingComments.value = false;
   }
 };
 
@@ -98,6 +95,7 @@ const loadArticle = async (targetSlug: string) => {
   try {
     const settings = await getSiteSettings().catch(() => null);
     commentsEnabled.value = settings?.commentsEnabled ?? true;
+    siteOrigin.value = window.location.origin;
     article.value = await getArticleBySlug(targetSlug);
 
     if (article.value) {
@@ -137,14 +135,6 @@ async function recordArticlePageView(targetSlug: string): Promise<void> {
 
 const handleLoginRequest = () => {
   authStore.loginWithGitHub();
-};
-
-const handleRefreshComments = async () => {
-  if (!slug.value) {
-    return;
-  }
-
-  await loadComments(slug.value, { silent: true });
 };
 
 const handleSubmitComment = async (content: string) => {
@@ -290,12 +280,12 @@ onBeforeUnmount(() => {
         <ArticleHeader :article="article" />
         <div class="divider" />
         <ArticleContent :content="article.content" />
+        <ArticleCopyrightInfo :article="article" :site-origin="siteOrigin" />
         <CommentSection
           :comments="comments"
           :is-logged-in="isAuthenticated"
           :auth-loading="isAuthLoading"
           :is-loading="isLoadingComments"
-          :is-refreshing="isRefreshingComments"
           :is-submitting-comment="isSubmittingComment"
           :submitting-reply-to-id="submittingReplyToId"
           :deleting-comment-id="deletingCommentId"
@@ -305,7 +295,6 @@ onBeforeUnmount(() => {
           :is-admin="isAdmin"
           :comments-enabled="commentsEnabled"
           :on-request-login="handleLoginRequest"
-          :on-refresh="handleRefreshComments"
           :on-submit-comment="handleSubmitComment"
           :on-submit-reply="handleSubmitReply"
           :on-delete-comment="handleDeleteComment"

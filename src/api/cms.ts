@@ -37,6 +37,10 @@ interface CmsArticleResponse {
   article: CmsArticleDetail;
 }
 
+interface CmsDeleteArticleResponse {
+  ok: boolean;
+}
+
 interface CmsArticleAutosaveResponse {
   autosave: CmsArticleAutosave | null;
 }
@@ -64,6 +68,12 @@ export function updateCmsArticle(id: string, body: UpdateCmsArticleInput): Promi
   return requestJson<CmsArticleResponse>(`/api/cms/articles/${id}`, {
     method: "PATCH",
     body,
+  });
+}
+
+export function deleteCmsArticle(id: string): Promise<CmsDeleteArticleResponse> {
+  return requestJson<CmsDeleteArticleResponse>(`/api/cms/articles/${id}`, {
+    method: "DELETE",
   });
 }
 

@@ -1,5 +1,6 @@
 import { requireAdmin } from "../../../_shared/auth";
 import {
+  deleteCmsArticle,
   getCmsArticle,
   readCmsArticleInput,
   readJsonBody,
@@ -48,4 +49,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     );
 
     return json({ article });
+  });
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) =>
+  handleRequest(async () => {
+    const db = requireDb(env);
+    await requireAdmin(request, env, db);
+
+    await deleteCmsArticle(db, readId(params));
+
+    return json({ ok: true });
   });

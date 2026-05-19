@@ -9,7 +9,6 @@ const props = defineProps<{
   isLoggedIn?: boolean;
   authLoading?: boolean;
   isLoading?: boolean;
-  isRefreshing?: boolean;
   isSubmittingComment?: boolean;
   submittingReplyToId?: string;
   deletingCommentId?: string;
@@ -19,7 +18,6 @@ const props = defineProps<{
   isAdmin?: boolean;
   commentsEnabled?: boolean;
   onRequestLogin?: () => void;
-  onRefresh?: () => void | Promise<void>;
   onSubmitComment?: (content: string) => void | Promise<void>;
   onSubmitReply?: (payload: { commentId: string; content: string }) => void | Promise<void>;
   onDeleteComment?: (commentId: string) => void | Promise<void>;
@@ -104,7 +102,7 @@ const handleSubmitReply = async () => {
 
 const handleDeleteComment = async (comment: ArticleComment) => {
   if (typeof window !== "undefined") {
-    const confirmed = window.confirm("确认删除这条评论吗？");
+    const confirmed = window.confirm("Delete this comment?");
 
     if (!confirmed) {
       return;
@@ -127,25 +125,14 @@ const handleDeleteComment = async (comment: ArticleComment) => {
   <section class="comments" aria-labelledby="article-comments-title">
     <header class="comments-header">
       <div class="title-group">
-        <h2 id="article-comments-title">评论 {{ totalCount }}</h2>
+        <h2 id="article-comments-title">Comments {{ totalCount }}</h2>
         <p class="helper-text">
-          <span v-if="isLoggedIn && currentUserName">以 {{ currentUserName }} 身份参与讨论</span>
-          <span v-else>仅支持 GitHub 登录用户发表评论</span>
+          <span v-if="isLoggedIn && currentUserName">Signed in as {{ currentUserName }}</span>
+          <span v-else>Only GitHub accounts can publish comments</span>
         </p>
       </div>
 
       <div class="header-actions">
-        <button
-          type="button"
-          class="refresh-btn"
-          title="刷新评论"
-          :disabled="isRefreshing || isLoading"
-          @click="props.onRefresh?.()"
-        >
-          <IconifyIcon icon="ph:arrows-clockwise" :size="16" />
-          <span>{{ isRefreshing ? "刷新中" : "刷新" }}</span>
-        </button>
-
         <button
           v-if="!isLoggedIn"
           type="button"
@@ -154,13 +141,13 @@ const handleDeleteComment = async (comment: ArticleComment) => {
           @click="props.onRequestLogin?.()"
         >
           <IconifyIcon icon="ph:github-logo" :size="16" />
-          <span>{{ authLoading ? "验证中" : "登录后评论" }}</span>
+          <span>{{ authLoading ? "Checking..." : "Login to comment" }}</span>
         </button>
       </div>
     </header>
 
     <p v-if="commentsEnabled === false" class="login-hint">
-      评论发布暂时关闭，历史评论仍可浏览。
+      Comment publishing is currently disabled, but older comments remain visible.
     </p>
 
     <div v-else-if="isLoggedIn" class="editor">
@@ -168,29 +155,23 @@ const handleDeleteComment = async (comment: ArticleComment) => {
         v-model="draft"
         rows="4"
         maxlength="1000"
-        placeholder="写下你的想法..."
+        placeholder="Share a thought..."
         :disabled="isSubmittingComment"
       />
       <div class="editor-footer">
         <span class="editor-meta" :class="{ warning: rootRemaining < 0 }">{{ rootRemaining }}</span>
-        <button
-          type="button"
-          class="submit-btn"
-          :disabled="!canSubmitComment"
-          @click="handleSubmitComment"
-        >
-          {{ isSubmittingComment ? "发布中..." : "发布评论" }}
+        <button type="button" class="submit-btn" :disabled="!canSubmitComment" @click="handleSubmitComment">
+          {{ isSubmittingComment ? "Publishing..." : "Post comment" }}
         </button>
       </div>
     </div>
 
     <p v-else class="login-hint">
-      登录后可以发表评论、回复，以及删除自己的评论。
+      Log in to comment, reply, and remove your own comments.
     </p>
 
     <p v-if="errorMessage" class="comment-error" role="alert">{{ errorMessage }}</p>
-    <p v-else-if="isLoading" class="comment-state" aria-live="polite">评论加载中...</p>
-    <p v-else-if="isRefreshing" class="comment-state" aria-live="polite">评论已刷新。</p>
+    <p v-else-if="isLoading" class="comment-state" aria-live="polite">Loading comments...</p>
 
     <div v-if="comments.length" class="list">
       <CommentItem
@@ -212,7 +193,7 @@ const handleDeleteComment = async (comment: ArticleComment) => {
     </div>
 
     <p v-else-if="!isLoading" class="comment-state comment-empty">
-      还没有评论，来留下第一句话吧。
+      No comments yet. Start the conversation.
     </p>
   </section>
 </template>
@@ -260,8 +241,7 @@ const handleDeleteComment = async (comment: ArticleComment) => {
   flex-wrap: wrap;
 }
 
-.github-btn,
-.refresh-btn {
+.github-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;

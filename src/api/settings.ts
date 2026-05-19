@@ -1,5 +1,5 @@
 import { requestJson } from "@/api/http";
-import type { SiteSettings } from "@/types/cms";
+import type { SiteNavActionSettings, SiteSettings } from "@/types/cms";
 
 interface SiteSettingsResponse {
   settings: SiteSettings;
@@ -10,6 +10,7 @@ export interface UpdateSiteSettingsInput extends Record<string, unknown> {
   siteDescription?: string;
   commentsEnabled?: boolean;
   analyticsEnabled?: boolean;
+  navAction?: SiteNavActionSettings;
 }
 
 export async function getSiteSettings(): Promise<SiteSettings> {

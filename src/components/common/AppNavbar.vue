@@ -1,101 +1,207 @@
 <script setup lang="ts">
-import { storeToRefs } from 'pinia'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { storeToRefs } from "pinia";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute } from "vue-router";
 
-import IconifyIcon from './IconifyIcon.vue'
-import ThemeToggle from './ThemeToggle.vue'
-import { useAuthStore } from '@/stores/auth'
+import { getSiteSettings } from "@/api/settings";
+import { useAuthStore } from "@/stores/auth";
+import type { SiteNavActionSettings } from "@/types/cms";
+import IconifyIcon from "./IconifyIcon.vue";
+import ThemeToggle from "./ThemeToggle.vue";
 
-const route = useRoute()
-const authStore = useAuthStore()
-const { isAdmin, isAuthenticated, isLoading, user } = storeToRefs(authStore)
+const route = useRoute();
+const authStore = useAuthStore();
+const { isAdmin, isAuthenticated, isLoading, user } = storeToRefs(authStore);
 
 const publicLinks = [
-  { to: '/', label: '主页' },
-  { to: '/articles', label: '文章' },
-] as const
+  { to: "/", label: "Home" },
+  { to: "/articles", label: "Articles" },
+] as const;
 
-const links = computed(() =>
-  isAdmin.value ? [...publicLinks, { to: '/cms', label: 'CMS' }] : publicLinks,
-)
+const isScrolled = ref(false);
+const navAction = ref<SiteNavActionSettings | null>(null);
+const isHomeRoute = computed(() => route.path === "/");
+const isHomeTop = computed(() => isHomeRoute.value && !isScrolled.value);
+const userDisplayName = computed(() => user.value?.githubLogin ?? "");
+const userAvatarUrl = computed(() => user.value?.githubAvatarUrl ?? "");
+const userProfileUrl = computed(() => user.value?.githubHtmlUrl ?? `https://github.com/${userDisplayName.value}`);
 
-const isScrolled = ref(false)
-const isHomeRoute = computed(() => route.path === '/')
-const isHomeTop = computed(() => isHomeRoute.value && !isScrolled.value)
-const userDisplayName = computed(() => user.value?.githubLogin ?? '')
-const userAvatarUrl = computed(() => user.value?.githubAvatarUrl ?? '')
-const userProfileUrl = computed(() => user.value?.githubHtmlUrl ?? `https://github.com/${userDisplayName.value}`)
+const textLinks = computed(() => {
+  const items: Array<
+    | { type: "internal"; key: string; label: string; to: string }
+    | { type: "external"; key: string; label: string; href: string }
+  > = publicLinks.map((link) => ({
+    type: "internal" as const,
+    key: link.to,
+    label: link.label,
+    to: link.to,
+  }));
 
-function isActive(to: string): boolean {
-  if (to === '/') {
-    return route.path === '/'
+  if (navAction.value?.enabled && navAction.value.variant === "text") {
+    items.push(createTextNavLink(navAction.value));
   }
 
-  return route.path === to || route.path.startsWith(`${to}/`)
+  if (isAdmin.value) {
+    items.push({ type: "internal", key: "/cms", to: "/cms", label: "CMS" });
+  }
+
+  return items;
+});
+
+const iconNavAction = computed(() => {
+  if (!navAction.value?.enabled || navAction.value.variant !== "icon") {
+    return null;
+  }
+
+  if (navAction.value.targetType === "external") {
+    return {
+      type: "external" as const,
+      href: navAction.value.href,
+      iconName: navAction.value.iconName,
+      title: navAction.value.tooltip,
+    };
+  }
+
+  return {
+    type: "internal" as const,
+    to: normalizeArticlePath(navAction.value.articlePath),
+    iconName: navAction.value.iconName,
+    title: navAction.value.tooltip,
+  };
+});
+
+function isActive(to: string): boolean {
+  if (to === "/") {
+    return route.path === "/";
+  }
+
+  return route.path === to || route.path.startsWith(`${to}/`);
 }
 
 function syncScrollState(): void {
-  isScrolled.value = window.scrollY > 8
+  isScrolled.value = window.scrollY > 8;
 }
 
 function handleLogin(): void {
-  authStore.loginWithGitHub()
+  authStore.loginWithGitHub();
 }
 
 async function handleLogout(): Promise<void> {
-  await authStore.logout()
+  await authStore.logout();
+}
+
+function createTextNavLink(action: SiteNavActionSettings) {
+  if (action.targetType === "external") {
+    return {
+      type: "external" as const,
+      key: action.href,
+      href: action.href,
+      label: action.label,
+    };
+  }
+
+  const articlePath = normalizeArticlePath(action.articlePath);
+  return {
+    type: "internal" as const,
+    key: articlePath,
+    to: articlePath,
+    label: action.label,
+  };
+}
+
+function normalizeArticlePath(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "/articles";
+  }
+
+  if (trimmed.startsWith("/")) {
+    return trimmed;
+  }
+
+  const normalized = trimmed.replace(/^articles\//, "").replace(/^\/+/, "");
+  return `/articles/${normalized}`;
+}
+
+async function loadNavAction(): Promise<void> {
+  try {
+    const settings = await getSiteSettings();
+    navAction.value = settings.navAction.enabled ? settings.navAction : null;
+  } catch {
+    navAction.value = null;
+  }
 }
 
 onMounted(() => {
-  syncScrollState()
-  window.addEventListener('scroll', syncScrollState, { passive: true })
-})
+  syncScrollState();
+  window.addEventListener("scroll", syncScrollState, { passive: true });
+  void loadNavAction();
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', syncScrollState)
-})
+  window.removeEventListener("scroll", syncScrollState);
+});
 
 watch(
   () => route.fullPath,
   () => {
     window.requestAnimationFrame(() => {
-      syncScrollState()
-    })
+      syncScrollState();
+    });
   },
-)
+);
 </script>
 
 <template>
   <nav class="navbar" :class="{ 'is-home-top': isHomeTop }">
     <div class="nav-inner">
-      <RouterLink class="logo" to="/" title="返回首页">Yamds's Blog</RouterLink>
+      <RouterLink class="logo" to="/" title="Back to home">Yamds's Blog</RouterLink>
       <div class="nav-links">
-        <RouterLink
-          v-for="link in links"
-          :key="link.to"
-          :to="link.to"
-          class="nav-link"
-          :class="{ active: isActive(link.to) }"
-          :aria-current="isActive(link.to) ? 'page' : undefined"
-        >
-          {{ link.label }}
-        </RouterLink>
+        <template v-for="link in textLinks" :key="link.key">
+          <RouterLink
+            v-if="link.type === 'internal'"
+            :to="link.to"
+            class="nav-link"
+            :class="{ active: isActive(link.to) }"
+            :aria-current="isActive(link.to) ? 'page' : undefined"
+          >
+            {{ link.label }}
+          </RouterLink>
+          <a v-else :href="link.href" class="nav-link" target="_blank" rel="noreferrer">
+            {{ link.label }}
+          </a>
+        </template>
       </div>
       <div class="nav-actions">
+        <component
+          :is="iconNavAction?.type === 'internal' ? RouterLink : 'a'"
+          v-if="iconNavAction"
+          class="icon-button nav-action-button"
+          v-bind="
+            iconNavAction.type === 'internal'
+              ? { to: iconNavAction.to }
+              : { href: iconNavAction.href, target: '_blank', rel: 'noreferrer' }
+          "
+          :title="iconNavAction.title"
+          :aria-label="iconNavAction.title"
+        >
+          <IconifyIcon :icon="iconNavAction.iconName" :size="18" />
+        </component>
+
         <div v-if="isAuthenticated && user" class="auth-panel">
           <a
             class="auth-user"
             :href="userProfileUrl"
             target="_blank"
             rel="noreferrer"
-            :title="`打开 ${userDisplayName} 的 GitHub 主页`"
+            :title="`Open ${userDisplayName}'s GitHub profile`"
           >
             <img
               v-if="userAvatarUrl"
               class="auth-avatar"
               :src="userAvatarUrl"
-              :alt="`${userDisplayName} 的头像`"
+              :alt="`${userDisplayName} avatar`"
               width="28"
               height="28"
             />
@@ -104,25 +210,13 @@ watch(
             </span>
             <span class="auth-name">{{ userDisplayName }}</span>
           </a>
-          <button
-            class="icon-button"
-            type="button"
-            title="登出"
-            aria-label="登出"
-            @click="handleLogout"
-          >
+          <button class="icon-button" type="button" title="Log out" aria-label="Log out" @click="handleLogout">
             <IconifyIcon icon="ph:sign-out" :size="18" />
           </button>
         </div>
-        <button
-          v-else
-          class="login-link"
-          type="button"
-          :disabled="isLoading"
-          @click="handleLogin"
-        >
+        <button v-else class="login-link" type="button" :disabled="isLoading" @click="handleLogin">
           <IconifyIcon icon="ph:github-logo" :size="18" />
-          <span>{{ isLoading ? '连接中' : 'GitHub 登录' }}</span>
+          <span>{{ isLoading ? "Connecting..." : "GitHub Login" }}</span>
         </button>
         <ThemeToggle />
       </div>
@@ -198,12 +292,6 @@ watch(
 .nav-link::after {
   content: "";
   position: absolute;
-  transition:
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.nav-link::after {
   left: 12px;
   right: 12px;
   bottom: 6px;
@@ -213,6 +301,9 @@ watch(
   opacity: 0;
   transform: scaleX(0);
   transform-origin: right center;
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .nav-link:hover,
@@ -319,6 +410,10 @@ watch(
 .icon-button {
   width: 36px;
   padding: 0;
+}
+
+.nav-action-button {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 720px) {

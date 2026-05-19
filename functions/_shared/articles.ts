@@ -9,12 +9,19 @@ import { queryAll, queryFirst } from "./d1";
 import { ApiError } from "./http";
 
 interface ArticleRow {
+  id: string;
   slug: string;
   title: string;
   summary: string | null;
   icon_name: string | null;
   tags_csv: string | null;
   published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  author_id: string | null;
+  author_name: string | null;
+  author_avatar: string | null;
+  author_html_url: string | null;
   reading_minutes: number | string | null;
   content_json?: string | null;
 }
@@ -60,14 +67,23 @@ const VALID_BLOCK_TYPES = new Set<ArticleContentBlock["type"]>([
 
 const ARTICLE_LIST_SQL = `
   SELECT
+    a.id,
     a.slug,
     a.title,
     COALESCE(a.summary, '') AS summary,
     COALESCE(a.icon_name, '${DEFAULT_ICON_NAME}') AS icon_name,
     GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
     a.published_at,
+    a.created_at,
+    a.updated_at,
+    a.author_id,
+    u.github_login AS author_name,
+    u.github_avatar_url AS author_avatar,
+    u.github_html_url AS author_html_url,
     a.reading_minutes
   FROM articles AS a
+  LEFT JOIN users AS u
+    ON u.id = a.author_id
   LEFT JOIN article_tags AS article_tag
     ON article_tag.article_id = a.id
   LEFT JOIN tags AS t
@@ -80,21 +96,36 @@ const ARTICLE_LIST_SQL = `
     a.summary,
     a.icon_name,
     a.published_at,
+    a.created_at,
+    a.updated_at,
+    a.author_id,
+    u.github_login,
+    u.github_avatar_url,
+    u.github_html_url,
     a.reading_minutes
   ORDER BY a.published_at DESC, a.updated_at DESC
 `;
 
 const ARTICLE_DETAIL_SQL = `
   SELECT
+    a.id,
     a.slug,
     a.title,
     COALESCE(a.summary, '') AS summary,
     COALESCE(a.icon_name, '${DEFAULT_ICON_NAME}') AS icon_name,
     GROUP_CONCAT(t.name, '${TAG_SEPARATOR}') AS tags_csv,
     a.published_at,
+    a.created_at,
+    a.updated_at,
+    a.author_id,
+    u.github_login AS author_name,
+    u.github_avatar_url AS author_avatar,
+    u.github_html_url AS author_html_url,
     a.reading_minutes,
     a.content_json
   FROM articles AS a
+  LEFT JOIN users AS u
+    ON u.id = a.author_id
   LEFT JOIN article_tags AS article_tag
     ON article_tag.article_id = a.id
   LEFT JOIN tags AS t
@@ -108,6 +139,12 @@ const ARTICLE_DETAIL_SQL = `
     a.summary,
     a.icon_name,
     a.published_at,
+    a.created_at,
+    a.updated_at,
+    a.author_id,
+    u.github_login,
+    u.github_avatar_url,
+    u.github_html_url,
     a.reading_minutes,
     a.content_json
   LIMIT 1
@@ -128,8 +165,10 @@ export async function getPublishedArticleBySlug(
 
 export function mapArticleRow(row: ArticleRow, includeContent: boolean): Article {
   const content = includeContent ? parseContentJson(row.content_json) : [];
+  const articleUrl = `/articles/${encodeURIComponent(row.slug)}`;
 
   return {
+    id: row.id,
     slug: row.slug,
     title: row.title,
     summary: row.summary ?? "",
@@ -137,6 +176,14 @@ export function mapArticleRow(row: ArticleRow, includeContent: boolean): Article
     icon_name: row.icon_name ?? DEFAULT_ICON_NAME,
     tags: parseTags(row.tags_csv),
     publishedAt: row.published_at ?? "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    articleUrl,
+    url: articleUrl,
+    authorId: row.author_id,
+    authorName: row.author_name ?? "",
+    authorAvatar: row.author_avatar,
+    authorHtmlUrl: row.author_html_url,
     readingMinutes: normalizeReadingMinutes(row.reading_minutes, content),
     content,
     comments: [],
