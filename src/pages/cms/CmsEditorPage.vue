@@ -1404,7 +1404,6 @@ watch(
               {{ publishing ? "发布中..." : "发布" }}
             </button>
           </div>
-          <input v-model="draft.title" type="text" class="title-input" placeholder="文章标题..." />
           <EditorToolbar
             :actions="toolbarActions"
             :active-keys="activeToolbarKeys"
@@ -1421,6 +1420,7 @@ watch(
             @image-link="promptImageLink"
           />
         </div>
+        <input v-model="draft.title" type="text" class="title-input" placeholder="文章标题..." />
         <section
           ref="editorContentWrap"
           class="editor-content-wrap"
@@ -1666,7 +1666,7 @@ watch(
 }
 .text-action:disabled { cursor: not-allowed; opacity: 0.5; }
 .publish-action { color: var(--accent); }
-.title-input { border: 0; font-size: clamp(30px, 4vw, 38px); padding: var(--space-2) 0; background: transparent; }
+.title-input { border: 0; font-size: clamp(30px, 4vw, 38px); padding: var(--space-2) 0; margin-top: var(--space-3); background: transparent; }
 .title-input:hover,.title-input:focus { border: 0; }
 .editor-content-wrap { position: relative; margin-top: var(--space-2); border: 1px solid var(--border-subtle); background: var(--bg-elevated); border-radius: var(--radius-md); padding: var(--space-3); }
 .hint { font-size: 12px; color: var(--text-tertiary); margin-bottom: var(--space-2); }

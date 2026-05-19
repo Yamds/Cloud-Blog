@@ -6,7 +6,6 @@ import CmsShell from "@/components/cms/CmsShell.vue";
 import StorageFilters from "@/components/cms/StorageFilters.vue";
 import StorageObjectsTable from "@/components/cms/StorageObjectsTable.vue";
 import StorageOverview from "@/components/cms/StorageOverview.vue";
-import { cmsStorageObjects } from "@/data/cms";
 import type {
   CmsDeleteMediaConflictDetails,
   CmsStorageFilters as CmsStorageFiltersModel,
@@ -17,7 +16,6 @@ import type {
 const storageObjects = ref<CmsStorageObject[]>([]);
 const actionMessage = ref("正在读取对象存储中的媒体对象。");
 const loading = ref(true);
-const showingFallback = ref(false);
 const deletePendingId = ref<string | null>(null);
 
 const filters = ref<CmsStorageFiltersModel>({
@@ -88,7 +86,7 @@ const filteredObjects = computed(() => {
     }
 
     const articleTitle = item.relatedArticle?.articleTitle ?? "";
-    return [item.key, item.mime, item.type, articleTitle].some((field) =>
+    return [getDisplayName(item), item.key, item.mime, item.type, articleTitle].some((field) =>
       field.toLowerCase().includes(query),
     );
   });
@@ -100,7 +98,7 @@ const filteredObjects = computed(() => {
     }
 
     if (filters.value.sortBy === "key") {
-      return left.key.localeCompare(right.key, "zh-CN");
+      return getDisplayName(left).localeCompare(getDisplayName(right), "zh-CN");
     }
 
     return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
@@ -160,6 +158,14 @@ function formatReferenceReason(details: CmsDeleteMediaConflictDetails): string {
   return [`删除已被阻止，以下文章正文仍在引用这个媒体：`, ...lines].join("\n");
 }
 
+function getDisplayName(item: CmsStorageObject): string {
+  return item.filename || item.key.split("/").filter(Boolean).pop() || item.key;
+}
+
+function getPublicMediaUrl(item: CmsStorageObject): string {
+  return item.previewUrl || `/api/cms/media/${encodeURIComponent(getDisplayName(item))}`;
+}
+
 async function loadStorageData(options: { silent?: boolean } = {}): Promise<void> {
   if (!options.silent) {
     loading.value = true;
@@ -173,12 +179,10 @@ async function loadStorageData(options: { silent?: boolean } = {}): Promise<void
 
   if (mediaResult.status === "fulfilled") {
     storageObjects.value = mediaResult.value.objects;
-    showingFallback.value = false;
     notes.push(`已加载 ${mediaResult.value.objects.length} 个媒体对象。`);
   } else {
-    storageObjects.value = structuredClone(cmsStorageObjects);
-    showingFallback.value = true;
-    notes.push(`真实对象列表读取失败，当前展示 fallback/mock：${buildErrorMessage(mediaResult.reason)}`);
+    storageObjects.value = [];
+    notes.push(`对象列表读取失败：${buildErrorMessage(mediaResult.reason)}`);
   }
 
   actionMessage.value = notes.join(" ");
@@ -186,74 +190,70 @@ async function loadStorageData(options: { silent?: boolean } = {}): Promise<void
 }
 
 async function handleCopy(item: CmsStorageObject): Promise<void> {
+  const targetUrl = getPublicMediaUrl(item);
+
   try {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(item.key);
-      actionMessage.value = `已复制 object key：${item.key}`;
+      await navigator.clipboard.writeText(targetUrl);
+      actionMessage.value = `已复制访问路径：${targetUrl}`;
       return;
     }
   } catch {
     // Fall through to the fallback message below.
   }
 
-  actionMessage.value = "当前环境不支持剪贴板写入，可直接从列表中复制 object key。";
+  actionMessage.value = "当前环境不支持剪贴板写入，可直接从列表中复制访问路径。";
 }
 
 function handlePreview(item: CmsStorageObject): void {
-  const targetUrl = item.previewUrl || `/api/cms/media/${item.id}`;
+  const targetUrl = getPublicMediaUrl(item);
 
   window.open(targetUrl, "_blank", "noopener,noreferrer");
-  actionMessage.value = `已打开预览：${item.key}`;
+  actionMessage.value = `已打开预览：${getDisplayName(item)}`;
 }
 
 async function handleRemove(item: CmsStorageObject): Promise<void> {
-  const confirmed = window.confirm(`确认删除这个对象吗？\n${item.key}`);
+  const displayName = getDisplayName(item);
+  const confirmed = window.confirm(`确认删除这个文件吗？\n${displayName}`);
 
   if (!confirmed) {
     return;
   }
 
-  if (!showingFallback.value) {
-    actionMessage.value = `正在删除：${item.key}`;
-    deletePendingId.value = item.id;
+  actionMessage.value = `正在删除：${displayName}`;
+  deletePendingId.value = item.id;
 
-    try {
-      await deleteCmsMediaObject(item.id);
-      storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
-      actionMessage.value = `已删除 R2 对象与元数据：${item.key}`;
-    } catch (error) {
-      const conflictDetails = extractDeleteConflictDetails(error);
+  try {
+    await deleteCmsMediaObject(item.id);
+    storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
+    actionMessage.value = `已删除文件与元数据：${displayName}`;
+  } catch (error) {
+    const conflictDetails = extractDeleteConflictDetails(error);
 
-      if (conflictDetails) {
-        actionMessage.value = formatReferenceReason(conflictDetails);
+    if (conflictDetails) {
+      actionMessage.value = formatReferenceReason(conflictDetails);
 
-        const forceConfirmed = window.confirm(
-          `${formatReferenceReason(conflictDetails)}\n\n如确认这批正文引用已失效，可继续强制删除。`,
-        );
+      const forceConfirmed = window.confirm(
+        `${formatReferenceReason(conflictDetails)}\n\n如确认这批正文引用已失效，可继续强制删除。`,
+      );
 
-        if (forceConfirmed) {
-          actionMessage.value = `正在强制删除：${item.key}`;
+      if (forceConfirmed) {
+        actionMessage.value = `正在强制删除：${displayName}`;
 
-          try {
-            await deleteCmsMediaObject(item.id, { force: true });
-            storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
-            actionMessage.value = `已强制删除对象：${item.key}。请尽快清理对应文章中的失效引用。`;
-          } catch (forceError) {
-            actionMessage.value = `强制删除失败：${buildErrorMessage(forceError)}`;
-          }
+        try {
+          await deleteCmsMediaObject(item.id, { force: true });
+          storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
+          actionMessage.value = `已强制删除文件：${displayName}。请尽快清理对应文章中的失效引用。`;
+        } catch (forceError) {
+          actionMessage.value = `强制删除失败：${buildErrorMessage(forceError)}`;
         }
-      } else {
-        actionMessage.value = `删除失败：${buildErrorMessage(error)}`;
       }
-    } finally {
-      deletePendingId.value = null;
+    } else {
+      actionMessage.value = `删除失败：${buildErrorMessage(error)}`;
     }
-
-    return;
+  } finally {
+    deletePendingId.value = null;
   }
-
-  storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
-  actionMessage.value = `已从 fallback/mock 列表移除：${item.key}`;
 }
 
 onMounted(() => {
@@ -263,7 +263,7 @@ onMounted(() => {
 
 <template>
   <CmsShell title="对象存储" subtitle="管理正文图片，以及它们与文章之间的关系。">
-    <p class="status-line" :class="{ fallback: showingFallback }">
+    <p class="status-line">
       {{ loading ? "正在同步对象列表..." : actionMessage }}
     </p>
     <p v-if="deletePendingId" class="status-line status-line--active">
@@ -301,11 +301,6 @@ onMounted(() => {
   color: var(--text-secondary);
   font-size: 13px;
   white-space: pre-line;
-}
-
-.status-line.fallback {
-  color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 35%, var(--border-subtle));
 }
 
 .status-line--active {

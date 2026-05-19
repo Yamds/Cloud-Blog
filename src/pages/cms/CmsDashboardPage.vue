@@ -7,18 +7,11 @@ import { isApiError } from "@/api/http";
 import ArticlesTable from "@/components/cms/ArticlesTable.vue";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import StatCard from "@/components/cms/StatCard.vue";
-import { cmsRecentArticles, cmsStats } from "@/data/cms";
-import type {
-  CmsAnalyticsSummary,
-  CmsArticleDetail,
-  CmsArticleRow,
-  CmsArticleStats,
-  CmsStatItem,
-} from "@/types/cms";
+import type { CmsAnalyticsSummary, CmsArticleDetail, CmsArticleRow, CmsArticleStats, CmsStatItem } from "@/types/cms";
 import { formatShanghaiDate } from "@/utils/date";
 
-const articles = ref<CmsArticleRow[]>([...cmsRecentArticles]);
-const stats = ref<CmsStatItem[]>([...cmsStats]);
+const articles = ref<CmsArticleRow[]>([]);
+const stats = ref<CmsStatItem[]>(createEmptyStats());
 const analyticsSummary = ref<CmsAnalyticsSummary | null>(null);
 const loading = ref(true);
 const archiveBusyId = ref<string | null>(null);
@@ -41,59 +34,37 @@ function mapArticleRow(article: CmsArticleDetail): CmsArticleRow {
 }
 
 function mapStats(source: CmsArticleStats | null, summary: CmsAnalyticsSummary | null): CmsStatItem[] {
-  const mockMap = new Map(cmsStats.map((item) => [item.key, item]));
-  const fallbackItem = (key: string, index: number): CmsStatItem => {
-    const item = mockMap.get(key) ?? cmsStats[index];
-
-    if (!item) {
-      return {
-        key,
-        label: "",
-        icon: "ph:dot-outline",
-        value: "0",
-        change: "",
-      };
-    }
-
-    return item;
-  };
-
-  const mockArticles = fallbackItem("articles", 0);
-  const mockViews = fallbackItem("views", 1);
-  const mockDrafts = fallbackItem("drafts", 2);
-  const mockTags = fallbackItem("tags", 3);
-
   return [
     {
       key: "articles",
       label: "总文章数",
       icon: "ph:article",
-      value: source ? formatCount(source.total) : mockArticles.value,
-      change: source ? `已发布 ${formatCount(source.published)}` : mockArticles.change,
-      positive: source ? source.published > 0 : mockArticles.positive,
+      value: source ? formatCount(source.total) : "0",
+      change: source ? `已发布 ${formatCount(source.published)}` : "等待同步",
+      positive: source ? source.published > 0 : false,
     },
     {
       key: "views",
       label: "总浏览量",
       icon: "ph:eye",
-      value: summary ? formatCount(summary.totalViews) : mockViews.value,
-      change: summary ? `今日 ${formatCount(summary.todayViews)}` : mockViews.change,
-      positive: summary ? summary.todayViews > 0 : mockViews.positive,
+      value: summary ? formatCount(summary.totalViews) : "0",
+      change: summary ? `今日 ${formatCount(summary.todayViews)}` : "等待同步",
+      positive: summary ? summary.todayViews > 0 : false,
     },
     {
       key: "drafts",
       label: "草稿",
       icon: "ph:file-dashed",
-      value: source ? formatCount(source.draft) : mockDrafts.value,
-      change: source ? `归档 ${formatCount(source.archived)}` : mockDrafts.change,
+      value: source ? formatCount(source.draft) : "0",
+      change: source ? `归档 ${formatCount(source.archived)}` : "等待同步",
     },
     {
       key: "tags",
       label: "标签数",
       icon: "ph:tag",
-      value: source ? formatCount(source.tags) : mockTags.value,
-      change: summary ? `近 7 日 ${formatCount(summary.last7DaysViews)}` : mockTags.change,
-      positive: summary ? summary.last7DaysViews > 0 : mockTags.positive,
+      value: source ? formatCount(source.tags) : "0",
+      change: summary ? `近 7 日 ${formatCount(summary.last7DaysViews)}` : "等待同步",
+      positive: summary ? summary.last7DaysViews > 0 : false,
     },
   ];
 }
@@ -116,11 +87,11 @@ async function loadDashboard(): Promise<void> {
 
     articles.value = sortedArticles.slice(0, 5).map(mapArticleRow);
   } else {
-    articles.value = [...cmsRecentArticles];
+    articles.value = [];
     notices.push(
       isApiError(articlesResult.reason)
-        ? `文章接口暂时不可用，当前展示本地示例数据：${articlesResult.reason.message}`
-        : "文章接口暂时不可用，当前展示本地示例数据。",
+        ? `文章接口暂时不可用：${articlesResult.reason.message}`
+        : "文章接口暂时不可用。",
     );
   }
 
@@ -129,8 +100,8 @@ async function loadDashboard(): Promise<void> {
   } else {
     notices.push(
       isApiError(analyticsResult.reason)
-        ? `访问分析接口暂时不可用，当前保留示例统计卡片：${analyticsResult.reason.message}`
-        : "访问分析接口暂时不可用，当前保留示例统计卡片。",
+        ? `访问分析接口暂时不可用：${analyticsResult.reason.message}`
+        : "访问分析接口暂时不可用。",
     );
   }
 
@@ -165,6 +136,10 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat("zh-CN").format(value);
 }
 
+function createEmptyStats(): CmsStatItem[] {
+  return mapStats(null, null);
+}
+
 function formatAnalyticsDayLabel(value: string): string {
   const [, month = "", day = ""] = value.split("-");
   return `${month}.${day}`;
@@ -173,6 +148,10 @@ function formatAnalyticsDayLabel(value: string): string {
 
 <template>
   <CmsShell title="概览" subtitle="欢迎回来，这里是你的博客统计与最近更新。">
+    <div v-if="loading" class="loading-overlay" aria-live="polite" aria-label="正在加载 CMS 数据">
+      <span class="loading-spinner" aria-hidden="true" />
+    </div>
+
     <p v-if="fallbackNotice" class="notice">
       {{ fallbackNotice }}
     </p>
@@ -180,11 +159,11 @@ function formatAnalyticsDayLabel(value: string): string {
       {{ actionNotice }}
     </p>
 
-    <section class="stats-grid" :class="{ dimmed: loading }">
+    <section v-if="!loading" class="stats-grid">
       <StatCard v-for="stat in stats" :key="stat.key" :stat="stat" />
     </section>
 
-    <section v-if="analyticsSummary" class="analytics-section" :class="{ dimmed: loading }">
+    <section v-if="!loading && analyticsSummary" class="analytics-section">
       <div class="section-header">
         <div>
           <h2>访问分析</h2>
@@ -237,11 +216,11 @@ function formatAnalyticsDayLabel(value: string): string {
       </div>
     </section>
 
-    <section class="recent-section">
+    <section v-if="!loading" class="recent-section">
       <div class="section-header">
         <div>
           <h2>最近文章</h2>
-          <p v-if="loading" class="section-note">正在读取最新文章数据…</p>
+          <p v-if="articles.length === 0" class="section-note">暂无文章数据。</p>
         </div>
         <div class="section-actions">
           <RouterLink class="secondary-action" to="/cms/comments">评论管理</RouterLink>
@@ -266,10 +245,21 @@ function formatAnalyticsDayLabel(value: string): string {
   color: var(--text-secondary);
   font-size: 13px;
 }
+.loading-overlay {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+}
+.loading-spinner {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: loading-spin 0.8s linear infinite;
+}
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
-.stats-grid.dimmed { opacity: 0.8; }
 .analytics-section { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); }
-.analytics-section.dimmed { opacity: 0.8; }
 .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .analytics-panel {
   display: grid;
@@ -396,6 +386,11 @@ h2 { font-family: var(--font-heading); font-size: 28px; font-weight: 400; }
 .primary-action:focus-visible,
 .secondary-action:focus-visible {
   outline: none;
+}
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 @media (max-width: 640px) {
   .analytics-grid { grid-template-columns: 1fr; }

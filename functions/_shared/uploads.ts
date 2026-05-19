@@ -21,6 +21,7 @@ export interface UploadedImagePayload {
 export interface CmsMediaObjectPayload {
   id: string;
   key: string;
+  filename: string;
   type: "image" | "attachment";
   mime: string;
   sizeBytes: number;
@@ -182,7 +183,7 @@ export async function uploadImageToStorage(options: {
   }
 
   const id = crypto.randomUUID();
-  const objectKey = createObjectKey(id, options.file, article);
+  const objectKey = await createUniqueObjectKey(options.db, options.bucket, options.file, article);
   const now = new Date().toISOString();
 
   try {
@@ -235,7 +236,7 @@ export async function uploadImageToStorage(options: {
   return {
     id,
     objectKey,
-    url: buildMediaUrl(id),
+    url: buildMediaUrl(id, objectKey),
   };
 }
 
@@ -335,12 +336,13 @@ export async function listMediaObjects(db: D1Database): Promise<CmsMediaObjectPa
     return {
       id: row.id,
       key: row.object_key,
+      filename: getObjectKeyFilename(row.object_key),
       type,
       mime: row.mime_type,
       sizeBytes: normalizeNumber(row.size_bytes),
       updatedAt: row.created_at,
       status: resolveMediaStatus(type, relatedArticle?.articleStatus ?? null),
-      previewUrl: buildMediaUrl(row.id),
+      previewUrl: buildMediaUrl(row.id, row.object_key),
       relatedArticle,
     } satisfies CmsMediaObjectPayload;
   });
@@ -361,6 +363,39 @@ export async function getStoredMediaObject(
         `,
       )
       .bind(id),
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    objectKey: row.object_key,
+    mimeType: row.mime_type,
+  };
+}
+
+export async function getStoredMediaObjectByPublicName(
+  db: D1Database,
+  publicName: string,
+): Promise<StoredMediaObject | null> {
+  const normalizedName = normalizePublicMediaName(publicName);
+  const row = await queryFirst<StoredMediaObjectRow>(
+    db
+      .prepare(
+        `
+          SELECT id, object_key, mime_type
+          FROM media_objects
+          WHERE object_key = ?
+             OR object_key LIKE ?
+          ORDER BY
+            CASE WHEN object_key = ? THEN 0 ELSE 1 END,
+            created_at DESC
+          LIMIT 1
+        `,
+      )
+      .bind(normalizedName, `%/${escapeLikePattern(normalizedName)}`, normalizedName),
   );
 
   if (!row) {
@@ -403,7 +438,7 @@ export async function findMediaUsageReferences(
     ),
   );
 
-  const mediaUrlTerms = buildMediaUrlTerms(options.media.id, options.siteUrl);
+  const mediaUrlTerms = buildMediaUrlTerms(options.media, options.siteUrl);
   const objectKeyTerms = buildObjectKeyTerms(options.media.objectKey);
 
   return rows.flatMap((row) => {
@@ -456,8 +491,16 @@ export async function deleteStoredMediaObject(options: {
   return media;
 }
 
-export function buildMediaUrl(id: string): string {
-  return `${PUBLIC_MEDIA_BASE_PATH}/${encodeURIComponent(id)}`;
+export function buildNamedMediaUrl(id: string, filename: string): string {
+  void id;
+  return `${PUBLIC_MEDIA_BASE_PATH}/${encodeURIComponent(filename)}`;
+}
+
+export function buildMediaUrl(id: string, objectKey?: string): string {
+  const filename = objectKey ? getObjectKeyFilename(objectKey) : "";
+  return filename && !objectKey?.includes("/")
+    ? buildNamedMediaUrl(id, filename)
+    : `${PUBLIC_MEDIA_BASE_PATH}/${encodeURIComponent(id)}`;
 }
 
 export function validateImageFile(file: File): void {
@@ -478,19 +521,37 @@ export function validateImageFile(file: File): void {
   }
 }
 
-function createObjectKey(
-  id: string,
+async function createUniqueObjectKey(
+  db: D1Database,
+  bucket: R2Bucket,
   file: File,
-  article: ArticleReferenceRow | null,
-): string {
-  const extension = resolveImageExtension(file);
+  _article: ArticleReferenceRow | null,
+): Promise<string> {
+  const filename = sanitizeFilename(file.name, resolveImageExtension(file));
+  const { name, extension } = splitFilename(filename);
 
-  if (!article) {
-    return `drafts/inbox/${id}.${extension}`;
+  for (let index = 0; index < 1000; index += 1) {
+    const candidateFilename = index === 0 ? filename : `${name}-${index}${extension}`;
+
+    if (await isObjectKeyAvailable(db, bucket, candidateFilename)) {
+      return candidateFilename;
+    }
   }
 
-  const root = article.status === "published" ? "articles" : "drafts";
-  return `${root}/${article.id}/${id}.${extension}`;
+  throw new ApiError(409, "MEDIA_NAME_CONFLICT", "Unable to allocate a unique media filename.");
+}
+
+async function isObjectKeyAvailable(db: D1Database, bucket: R2Bucket, objectKey: string): Promise<boolean> {
+  const existingRow = await queryFirst<{ id: string }>(
+    db.prepare("SELECT id FROM media_objects WHERE object_key = ? LIMIT 1").bind(objectKey),
+  );
+
+  if (existingRow) {
+    return false;
+  }
+
+  const existingObject = await bucket.head(objectKey);
+  return existingObject === null;
 }
 
 function resolveImageExtension(file: File): string {
@@ -507,6 +568,55 @@ function resolveImageExtension(file: File): string {
   }
 
   return "bin";
+}
+
+function sanitizeFilename(filename: string, fallbackExtension: string): string {
+  const rawName = filename.trim() || `image.${fallbackExtension}`;
+  const decodedName = rawName.replace(/[/\\]+/g, "-");
+  const withoutControl = decodedName.replace(/[\u0000-\u001f\u007f<>:"|?*]+/g, "-");
+  const collapsed = withoutControl.replace(/\s+/g, " ").replace(/-+/g, "-").trim();
+  const candidate = collapsed || `image.${fallbackExtension}`;
+  const extension = candidate.includes(".") ? candidate.split(".").pop()?.trim() : "";
+
+  if (extension && /^[a-z0-9]{1,12}$/i.test(extension)) {
+    return candidate.slice(0, 180);
+  }
+
+  return `${candidate.slice(0, 160)}.${fallbackExtension}`;
+}
+
+function splitFilename(filename: string): { name: string; extension: string } {
+  const dotIndex = filename.lastIndexOf(".");
+
+  if (dotIndex <= 0) {
+    return {
+      name: filename,
+      extension: "",
+    };
+  }
+
+  return {
+    name: filename.slice(0, dotIndex),
+    extension: filename.slice(dotIndex),
+  };
+}
+
+function getObjectKeyFilename(objectKey: string): string {
+  return objectKey.split("/").filter(Boolean).pop() ?? "";
+}
+
+function normalizePublicMediaName(value: string): string {
+  const decoded = decodeURIComponent(value).trim();
+
+  if (!decoded || decoded.includes("/") || decoded.includes("\\")) {
+    throw new ApiError(400, "VALIDATION_ERROR", "Invalid media filename.");
+  }
+
+  return decoded;
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 function validateRemoteImageUrl(value: unknown): string {
@@ -596,13 +706,16 @@ function normalizeNumber(value: number | string): number {
   return Number.isFinite(nextValue) ? nextValue : 0;
 }
 
-function buildMediaUrlTerms(id: string, siteUrl?: string): string[] {
-  const relativeUrl = buildMediaUrl(id);
-  const terms = new Set<string>([relativeUrl]);
+function buildMediaUrlTerms(media: StoredMediaObject, siteUrl?: string): string[] {
+  const legacyUrl = buildMediaUrl(media.id);
+  const namedUrl = buildMediaUrl(media.id, media.objectKey);
+  const terms = new Set<string>([legacyUrl, `${legacyUrl}/`, namedUrl]);
   const normalizedSiteUrl = siteUrl?.trim().replace(/\/+$/, "");
 
   if (normalizedSiteUrl && /^https?:\/\//i.test(normalizedSiteUrl)) {
-    terms.add(`${normalizedSiteUrl}${relativeUrl}`);
+    terms.add(`${normalizedSiteUrl}${legacyUrl}`);
+    terms.add(`${normalizedSiteUrl}${legacyUrl}/`);
+    terms.add(`${normalizedSiteUrl}${namedUrl}`);
   }
 
   return [...terms];

@@ -59,6 +59,10 @@ function resolveFileIcon(item: CmsStorageObject): string {
 
   return "ph:file";
 }
+
+function getDisplayName(item: CmsStorageObject): string {
+  return item.filename || item.key.split("/").filter(Boolean).pop() || item.key;
+}
 </script>
 
 <template>
@@ -71,7 +75,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
     <div v-else-if="viewMode === 'table'" class="table-wrap">
       <div class="table-head">
         <span>预览</span>
-        <span>Object Key</span>
+        <span>文件名</span>
         <span>类型 / 状态</span>
         <span>大小</span>
         <span>关联文章</span>
@@ -84,7 +88,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
           <img
             v-if="item.type === 'image' && item.previewUrl"
             :src="item.previewUrl"
-            :alt="item.key"
+            :alt="getDisplayName(item)"
             class="preview-image"
             loading="lazy"
           />
@@ -94,7 +98,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
         </div>
 
         <div class="key-cell">
-          <p class="object-key">{{ item.key }}</p>
+          <p class="object-key">{{ getDisplayName(item) }}</p>
           <p class="object-meta">{{ item.mime }}</p>
         </div>
 
@@ -127,7 +131,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
           <button type="button" title="预览对象" @click="emit('preview', item)">
             <IconifyIcon icon="ph:eye" :size="16" />
           </button>
-          <button type="button" title="复制 object key" @click="emit('copy', item)">
+          <button type="button" title="复制访问路径" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
           </button>
           <button type="button" title="从当前会话移除" @click="emit('remove', item)">
@@ -143,7 +147,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
           <img
             v-if="item.type === 'image' && item.previewUrl"
             :src="item.previewUrl"
-            :alt="item.key"
+            :alt="getDisplayName(item)"
             class="card-image"
             loading="lazy"
           />
@@ -164,7 +168,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
             </span>
           </div>
 
-          <p class="object-key card-key">{{ item.key }}</p>
+          <p class="object-key card-key">{{ getDisplayName(item) }}</p>
           <p class="object-meta">{{ item.mime }} · {{ formatBytes(item.sizeBytes) }}</p>
           <p class="article-line">
             {{ item.relatedArticle ? item.relatedArticle.articleTitle : "暂未关联文章" }}
@@ -183,7 +187,7 @@ function resolveFileIcon(item: CmsStorageObject): string {
           <button type="button" title="预览对象" @click="emit('preview', item)">
             <IconifyIcon icon="ph:eye" :size="16" />
           </button>
-          <button type="button" title="复制 object key" @click="emit('copy', item)">
+          <button type="button" title="复制访问路径" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
           </button>
           <button type="button" title="从当前会话移除" @click="emit('remove', item)">

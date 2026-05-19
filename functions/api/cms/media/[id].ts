@@ -5,13 +5,14 @@ import { ApiError, handleRequest, json } from "../../../_shared/http";
 import {
   deleteStoredMediaObject,
   findMediaUsageReferences,
+  getStoredMediaObjectByPublicName,
   getStoredMediaObject,
   requireBucket,
   buildMediaUrl,
   type StorageEnv,
 } from "../../../_shared/uploads";
 
-function readId(params: EventContext<Env, string, unknown>["params"]): string {
+function readMediaParam(params: EventContext<Env, string, unknown>["params"]): string {
   const idParam = params.id;
   const id = Array.isArray(idParam) ? idParam[0] : idParam;
 
@@ -25,7 +26,10 @@ function readId(params: EventContext<Env, string, unknown>["params"]): string {
 export const onRequestGet: PagesFunction<StorageEnv> = async ({ env, params }) =>
   handleRequest(async () => {
     const db = requireDb(env);
-    const media = await getStoredMediaObject(db, readId(params));
+    const rawParam = readMediaParam(params);
+    const media =
+      (await getStoredMediaObjectByPublicName(db, rawParam).catch(() => null)) ??
+      (await getStoredMediaObject(db, rawParam));
 
     if (!media) {
       throw new ApiError(404, "NOT_FOUND", "Media object not found.");
@@ -58,7 +62,7 @@ export const onRequestDelete: PagesFunction<StorageEnv> = async ({ request, env,
   handleRequest(async () => {
     const db = requireDb(env);
     await requireAdmin(request, env, db);
-    const id = readId(params);
+    const id = readMediaParam(params);
     const force = readForceFlag(request);
     const media = await getStoredMediaObject(db, id);
 
@@ -82,7 +86,7 @@ export const onRequestDelete: PagesFunction<StorageEnv> = async ({ request, env,
             media: {
               id: media.id,
               objectKey: media.objectKey,
-              url: buildMediaUrl(media.id),
+              url: buildMediaUrl(media.id, media.objectKey),
             },
             references,
           },

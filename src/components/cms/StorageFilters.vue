@@ -43,7 +43,7 @@ const relationOptions: Array<{ value: CmsStorageRelationFilter; label: string }>
 const sortOptions: Array<{ value: CmsStorageSortKey; label: string }> = [
   { value: "updatedAt", label: "按更新时间" },
   { value: "sizeBytes", label: "按大小" },
-  { value: "key", label: "按对象 key" },
+  { value: "key", label: "按文件名" },
 ];
 
 const viewOptions: Array<{ value: CmsStorageViewMode; icon: string; label: string }> = [
@@ -127,7 +127,7 @@ function resetFilters(): void {
         <input
           :value="modelValue.query"
           type="search"
-          placeholder="按 key、类型或关联文章搜索"
+          placeholder="按文件名、类型或关联文章搜索"
           @input="onQueryInput"
         />
       </label>

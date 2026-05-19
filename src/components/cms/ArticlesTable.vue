@@ -52,6 +52,7 @@ const statusMap = {
         </button>
       </div>
     </div>
+    <p v-if="articles.length === 0" class="empty-row">暂无文章。</p>
   </div>
 </template>
 
@@ -62,6 +63,7 @@ const statusMap = {
 .table-row { border-bottom: 1px solid var(--border-subtle); }
 .table-row:last-child { border-bottom: 0; }
 .table-row:hover { background: var(--bg); }
+.empty-row { padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 .title { font-size: 16px; }
 time { color: var(--text-secondary); font-family: var(--font-heading); }
 .status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-tertiary); }

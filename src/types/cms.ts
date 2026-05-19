@@ -145,6 +145,7 @@ export interface CmsMediaUsageReference {
 export interface CmsStorageObject {
   id: string;
   key: string;
+  filename?: string;
   type: CmsStorageObjectType;
   mime: string;
   sizeBytes: number;
