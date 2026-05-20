@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed, ref } from "vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
-import { ref } from "vue";
+import { useI18n } from "@/i18n/useI18n";
 
 defineProps<{ tags: string[] }>();
 const emit = defineEmits<{
@@ -9,6 +10,19 @@ const emit = defineEmits<{
 }>();
 
 const inputValue = ref("");
+const { locale } = useI18n();
+
+const text = computed(() =>
+  locale.value === "en"
+    ? {
+        removeTag: "Remove tag",
+        placeholder: "Add a tag...",
+      }
+    : {
+        removeTag: "删除标签",
+        placeholder: "添加标签...",
+      },
+);
 
 function addTag(): void {
   const value = inputValue.value.trim();
@@ -22,11 +36,11 @@ function addTag(): void {
   <div class="tags">
     <span v-for="tag in tags" :key="tag" class="tag">
       {{ tag }}
-      <button type="button" title="删除标签" @click="emit('remove', tag)">
+      <button type="button" :title="text.removeTag" :aria-label="text.removeTag" @click="emit('remove', tag)">
         <IconifyIcon icon="ph:x" :size="12" />
       </button>
     </span>
-    <input v-model="inputValue" type="text" placeholder="添加标签..." @keydown.enter.prevent="addTag" />
+    <input v-model="inputValue" type="text" :placeholder="text.placeholder" @keydown.enter.prevent="addTag" />
   </div>
 </template>
 

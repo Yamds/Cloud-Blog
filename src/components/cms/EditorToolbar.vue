@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
+import { useI18n } from "@/i18n/useI18n";
 
 export interface ToolbarAction {
   key: string;
@@ -49,6 +51,30 @@ const toolbarRows = [
 function findAction(key: string): ToolbarAction | undefined {
   return props.actions.find((action) => action.key === key);
 }
+
+const { locale } = useI18n();
+
+const text = computed(() =>
+  locale.value === "en"
+    ? {
+        headingLevel: "Heading level",
+        paragraph: "Paragraph",
+        imageMenu: "Image actions",
+        uploadImage: "Upload image",
+        imageLink: "Insert URL",
+        textColor: "Text color",
+        backgroundColor: "Highlight color",
+      }
+    : {
+        headingLevel: "标题层级",
+        paragraph: "正文",
+        imageMenu: "图片操作",
+        uploadImage: "上传图片",
+        imageLink: "输入链接",
+        textColor: "字体颜色",
+        backgroundColor: "背景颜色",
+      },
+);
 </script>
 
 <template>
@@ -59,11 +85,11 @@ function findAction(key: string): ToolbarAction | undefined {
           v-if="group.kind === 'format'"
           class="heading-select"
           :value="headingValue"
-          title="标题层级"
-          aria-label="标题层级"
+          :title="text.headingLevel"
+          :aria-label="text.headingLevel"
           @change="emit('set-heading', ($event.target as HTMLSelectElement).value)"
         >
-          <option value="paragraph">正文</option>
+          <option value="paragraph">{{ text.paragraph }}</option>
           <option value="1">H1</option>
           <option value="2">H2</option>
           <option value="3">H3</option>
@@ -83,12 +109,12 @@ function findAction(key: string): ToolbarAction | undefined {
               >
                 <IconifyIcon :icon="findAction(key)?.icon ?? ''" />
               </button>
-              <div class="toolbar-image-dropdown" role="menu" aria-label="图片操作">
+              <div class="toolbar-image-dropdown" role="menu" :aria-label="text.imageMenu">
                 <button type="button" class="toolbar-dropdown-btn" role="menuitem" @click="emit('image-upload')">
-                  上传图片
+                  {{ text.uploadImage }}
                 </button>
                 <button type="button" class="toolbar-dropdown-btn" role="menuitem" @click="emit('image-link')">
-                  输入链接
+                  {{ text.imageLink }}
                 </button>
               </div>
             </div>
@@ -108,13 +134,13 @@ function findAction(key: string): ToolbarAction | undefined {
         </template>
 
         <div v-else-if="group.kind === 'colors'" class="color-select-group">
-          <label class="color-select-label" title="字体颜色">
+          <label class="color-select-label" :title="text.textColor">
             <IconifyIcon icon="ph:paint-brush" />
             <select
               class="color-select"
               :value="activeColor ?? ''"
-              title="字体颜色"
-              aria-label="字体颜色"
+              :title="text.textColor"
+              :aria-label="text.textColor"
               @change="emit('set-color', ($event.target as HTMLSelectElement).value)"
             >
               <option v-for="color in colors" :key="color.key" :value="color.value">
@@ -122,13 +148,13 @@ function findAction(key: string): ToolbarAction | undefined {
               </option>
             </select>
           </label>
-          <label class="color-select-label" title="背景颜色">
+          <label class="color-select-label" :title="text.backgroundColor">
             <IconifyIcon icon="ph:highlighter-circle" />
             <select
               class="color-select"
               :value="activeBackgroundColor ?? ''"
-              title="背景颜色"
-              aria-label="背景颜色"
+              :title="text.backgroundColor"
+              :aria-label="text.backgroundColor"
               @change="emit('set-background-color', ($event.target as HTMLSelectElement).value)"
             >
               <option v-for="color in backgroundColors" :key="color.key" :value="color.value">

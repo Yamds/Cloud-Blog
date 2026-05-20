@@ -67,6 +67,7 @@ export const cmsAiActions: CmsAiAction[] = [
   { key: "polish", label: "润色段落", description: "保持语义，优化表达克制度。" },
   { key: "tags", label: "生成标签", description: "根据正文推荐主题标签。" },
   { key: "format", label: "AI 排版", description: "将纯文本重排为结构化内容。" },
+  { key: "translate", label: "AI 翻译", description: "基于中文稿生成或刷新英文稿。" },
 ];
 
 function createStoragePreview(title: string, subtitle: string, palette: { bg: string; panel: string; accent: string }): string {

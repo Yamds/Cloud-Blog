@@ -16,7 +16,8 @@ const props = withDefaults(
   },
 );
 
-const { t } = useI18n();
+const { locale, t } = useI18n();
+const localeTag = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,26 +34,30 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat(localeTag.value).format(value);
+}
+
 const cards = computed(() => [
   {
     key: "total",
     label: t("cms.storage.overview.totalObjects"),
     icon: "ph:stack",
-    value: props.summary.totalObjects.toString(),
+    value: formatCount(props.summary.totalObjects),
     change: t("cms.storage.overview.totalObjectsChange", { count: props.summary.updatedRecentlyCount }),
   },
   {
     key: "images",
     label: t("cms.storage.overview.images"),
     icon: "ph:image-square",
-    value: props.summary.imageCount.toString(),
+    value: formatCount(props.summary.imageCount),
     change: t("cms.storage.overview.imagesChange", { count: props.summary.processingCount }),
   },
   {
     key: "attachments",
     label: t("cms.storage.overview.attachments"),
     icon: "ph:paperclip",
-    value: props.summary.attachmentCount.toString(),
+    value: formatCount(props.summary.attachmentCount),
     change: t("cms.storage.overview.attachmentsChange", { count: props.summary.orphanedCount }),
   },
   {
@@ -66,7 +71,7 @@ const cards = computed(() => [
     key: "linked",
     label: t("cms.storage.overview.linked"),
     icon: "ph:link-simple",
-    value: props.summary.linkedCount.toString(),
+    value: formatCount(props.summary.linkedCount),
     change: t("cms.storage.overview.linkedChange", { count: props.summary.orphanedCount }),
   },
 ]);

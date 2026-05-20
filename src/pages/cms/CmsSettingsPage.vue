@@ -4,12 +4,23 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { isApiError } from "@/api/http";
 import { getCmsSiteSettings, updateCmsSiteSettings } from "@/api/settings";
 import CmsShell from "@/components/cms/CmsShell.vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import type {
   SiteNavActionSettings,
   SiteNavActionTargetType,
   SiteNavActionVariant,
   SiteSettings,
 } from "@/types/cms";
+
+type MessageState =
+  | {
+      key: MessageKey;
+      params?: Record<string, string | number>;
+    }
+  | {
+      text: string;
+    };
 
 const MAX_NAV_ACTIONS = 8;
 
@@ -43,9 +54,17 @@ const form = reactive({
 
 const loading = ref(true);
 const saving = ref(false);
-const notice = ref("");
+const notice = ref<MessageState | null>(null);
+const { t } = useI18n();
 
 const canAddNavAction = computed(() => form.navActions.length < MAX_NAV_ACTIONS);
+const noticeText = computed(() => {
+  if (!notice.value) {
+    return "";
+  }
+
+  return "text" in notice.value ? notice.value.text : t(notice.value.key, notice.value.params);
+});
 
 function ensureNavActions(actions?: SiteNavActionSettings[]): SiteNavActionSettings[] {
   const normalized = (actions ?? []).map((action) => cloneNavAction(action)).slice(0, MAX_NAV_ACTIONS);
@@ -62,13 +81,13 @@ function applySettings(settings: SiteSettings): void {
 
 async function loadSettings(): Promise<void> {
   loading.value = true;
-  notice.value = "";
+  notice.value = null;
 
   try {
     const settings = await getCmsSiteSettings();
     applySettings(settings);
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "加载设置失败。";
+    notice.value = isApiError(error) ? { text: error.message } : { key: "cms.settings.loadFailed" };
   } finally {
     loading.value = false;
   }
@@ -93,7 +112,7 @@ function removeNavAction(index: number): void {
 
 async function handleSubmit(): Promise<void> {
   saving.value = true;
-  notice.value = "";
+  notice.value = null;
 
   try {
     const navActions = form.navActions.map((action) => ({ ...action })).slice(0, MAX_NAV_ACTIONS);
@@ -106,9 +125,9 @@ async function handleSubmit(): Promise<void> {
       navActions,
     });
     applySettings(settings);
-    notice.value = "设置已保存。";
+    notice.value = { key: "cms.settings.saveSuccess" };
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "保存设置失败。";
+    notice.value = isApiError(error) ? { text: error.message } : { key: "cms.settings.saveFailed" };
   } finally {
     saving.value = false;
   }
@@ -120,41 +139,46 @@ onMounted(() => {
 </script>
 
 <template>
-  <CmsShell title="站点设置" subtitle="管理公开站点信息、功能开关和导航栏按钮。">
-    <p v-if="notice" class="notice">{{ notice }}</p>
+  <CmsShell :title="t('cms.settings.title')" :subtitle="t('cms.settings.subtitle')">
+    <p v-if="noticeText" class="notice">{{ noticeText }}</p>
 
     <form class="settings-form" :class="{ loading }" @submit.prevent="handleSubmit">
       <section class="settings-panel">
-        <h2>基础信息</h2>
+        <h2>{{ t("cms.settings.sectionBasic") }}</h2>
         <label>
-          <span>站点名称</span>
-          <input v-model="form.siteName" type="text" maxlength="80" placeholder="例如：Yamds 的博客" />
+          <span>{{ t("cms.settings.siteName") }}</span>
+          <input
+            v-model="form.siteName"
+            type="text"
+            maxlength="80"
+            :placeholder="t('cms.settings.siteNamePlaceholder')"
+          />
         </label>
         <label>
-          <span>站点简介</span>
+          <span>{{ t("cms.settings.siteDescription") }}</span>
           <textarea
             v-model="form.siteDescription"
             maxlength="300"
             rows="4"
-            placeholder="为公开站点添加一段简短介绍。"
+            :placeholder="t('cms.settings.siteDescriptionPlaceholder')"
           />
         </label>
       </section>
 
       <section class="settings-panel">
-        <h2>功能开关</h2>
+        <h2>{{ t("cms.settings.sectionFeatures") }}</h2>
         <label class="switch-row">
           <input v-model="form.commentsEnabled" type="checkbox" />
           <span>
-            <strong>启用评论</strong>
-            <small>关闭后读者仍可查看已有评论。</small>
+            <strong>{{ t("cms.settings.enableComments") }}</strong>
+            <small>{{ t("cms.settings.enableCommentsHint") }}</small>
           </span>
         </label>
         <label class="switch-row">
           <input v-model="form.analyticsEnabled" type="checkbox" />
           <span>
-            <strong>记录分析数据</strong>
-            <small>页面浏览请求仍会成功，但不会再写入新的浏览记录。</small>
+            <strong>{{ t("cms.settings.enableAnalytics") }}</strong>
+            <small>{{ t("cms.settings.enableAnalyticsHint") }}</small>
           </span>
         </label>
       </section>
@@ -162,10 +186,12 @@ onMounted(() => {
       <section class="settings-panel">
         <div class="panel-heading">
           <div>
-            <h2>导航栏按钮</h2>
-            <p class="panel-intro">最多 8 个。图标按钮显示在登录区左侧，文字按钮显示在文章与 CMS 之间。</p>
+            <h2>{{ t("cms.settings.sectionNavActions") }}</h2>
+            <p class="panel-intro">{{ t("cms.settings.sectionNavIntro") }}</p>
           </div>
-          <button type="button" class="text-action" :disabled="!canAddNavAction" @click="addNavAction">添加按钮</button>
+          <button type="button" class="text-action" :disabled="!canAddNavAction" @click="addNavAction">
+            {{ t("cms.settings.addAction") }}
+          </button>
         </div>
 
         <div class="nav-action-list">
@@ -175,20 +201,22 @@ onMounted(() => {
             class="nav-action-card"
           >
             <div class="card-header">
-              <strong>按钮 {{ index + 1 }}</strong>
-              <button type="button" class="text-action" @click="removeNavAction(index)">删除</button>
+              <strong>{{ t("cms.settings.actionCard", { index: index + 1 }) }}</strong>
+              <button type="button" class="text-action" @click="removeNavAction(index)">
+                {{ t("cms.settings.removeAction") }}
+              </button>
             </div>
 
             <label class="switch-row">
               <input v-model="action.enabled" type="checkbox" />
               <span>
-                <strong>启用这个按钮</strong>
-                <small>关闭后保留配置，但不会出现在导航栏。</small>
+                <strong>{{ t("cms.settings.enableAction") }}</strong>
+                <small>{{ t("cms.settings.enableActionHint") }}</small>
               </span>
             </label>
 
             <div class="option-group">
-              <span class="field-label">按钮样式</span>
+              <span class="field-label">{{ t("cms.settings.variantLabel") }}</span>
               <div class="segmented">
                 <button
                   type="button"
@@ -197,7 +225,7 @@ onMounted(() => {
                   :aria-pressed="action.variant === 'icon'"
                   @click="action.variant = 'icon'"
                 >
-                  图标
+                  {{ t("cms.settings.variantIcon") }}
                 </button>
                 <button
                   type="button"
@@ -206,13 +234,13 @@ onMounted(() => {
                   :aria-pressed="action.variant === 'text'"
                   @click="action.variant = 'text'"
                 >
-                  文字
+                  {{ t("cms.settings.variantText") }}
                 </button>
               </div>
             </div>
 
             <div class="option-group">
-              <span class="field-label">跳转目标</span>
+              <span class="field-label">{{ t("cms.settings.targetLabel") }}</span>
               <div class="segmented">
                 <button
                   type="button"
@@ -221,7 +249,7 @@ onMounted(() => {
                   :aria-pressed="action.targetType === 'external'"
                   @click="action.targetType = 'external'"
                 >
-                  外部链接
+                  {{ t("cms.settings.targetExternal") }}
                 </button>
                 <button
                   type="button"
@@ -230,38 +258,58 @@ onMounted(() => {
                   :aria-pressed="action.targetType === 'article'"
                   @click="action.targetType = 'article'"
                 >
-                  文章
+                  {{ t("cms.settings.targetArticle") }}
                 </button>
               </div>
             </div>
 
             <div v-if="action.variant === 'icon'" class="field-grid">
               <label>
-                <span>Iconify 图标名</span>
-                <input v-model="action.iconName" type="text" maxlength="80" placeholder="ph:paper-plane-tilt" />
+                <span>{{ t("cms.settings.iconName") }}</span>
+                <input
+                  v-model="action.iconName"
+                  type="text"
+                  maxlength="80"
+                  :placeholder="t('cms.settings.iconNamePlaceholder')"
+                />
               </label>
               <label>
-                <span>提示文案</span>
-                <input v-model="action.tooltip" type="text" maxlength="120" placeholder="例如：在新标签页打开" />
+                <span>{{ t("cms.settings.tooltip") }}</span>
+                <input
+                  v-model="action.tooltip"
+                  type="text"
+                  maxlength="120"
+                  :placeholder="t('cms.settings.tooltipPlaceholder')"
+                />
               </label>
             </div>
 
             <label v-else>
-              <span>按钮文案</span>
-              <input v-model="action.label" type="text" maxlength="40" placeholder="例如：关于" />
+              <span>{{ t("cms.settings.actionLabel") }}</span>
+              <input
+                v-model="action.label"
+                type="text"
+                maxlength="40"
+                :placeholder="t('cms.settings.actionLabelPlaceholder')"
+              />
             </label>
 
             <label v-if="action.targetType === 'external'">
-              <span>外部链接 URL</span>
-              <input v-model="action.href" type="url" maxlength="300" placeholder="https://example.com" />
+              <span>{{ t("cms.settings.externalUrl") }}</span>
+              <input
+                v-model="action.href"
+                type="url"
+                maxlength="300"
+                :placeholder="t('cms.settings.externalUrlPlaceholder')"
+              />
             </label>
             <label v-else>
-              <span>文章 slug 或路径</span>
+              <span>{{ t("cms.settings.articlePath") }}</span>
               <input
                 v-model="action.articlePath"
                 type="text"
                 maxlength="300"
-                placeholder="hello-world 或 /articles/hello-world"
+                :placeholder="t('cms.settings.articlePathPlaceholder')"
               />
             </label>
           </section>
@@ -269,9 +317,11 @@ onMounted(() => {
       </section>
 
       <div class="form-actions">
-        <button type="button" class="text-action" :disabled="loading || saving" @click="loadSettings">重新加载</button>
+        <button type="button" class="text-action" :disabled="loading || saving" @click="loadSettings">
+          {{ t("cms.shared.reload") }}
+        </button>
         <button type="submit" class="primary" :disabled="loading || saving">
-          {{ saving ? "保存中..." : "保存设置" }}
+          {{ saving ? t("cms.shared.saving") : t("cms.shared.saveSettings") }}
         </button>
       </div>
     </form>

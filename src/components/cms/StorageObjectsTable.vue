@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
 import type { CmsStorageObject, CmsStorageViewMode } from "@/types/cms";
-import { formatShanghaiDateTime } from "@/utils/date";
 
 defineProps<{
   objects: CmsStorageObject[];
@@ -15,7 +15,8 @@ const emit = defineEmits<{
   remove: [item: CmsStorageObject];
 }>();
 
-const { t } = useI18n();
+const { locale, t } = useI18n();
+const localeTag = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const statusMap = {
   ready: { label: "cms.storage.filters.statusReady", icon: "ph:check-circle", tone: "ready" },
@@ -65,6 +66,26 @@ function resolveFileIcon(item: CmsStorageObject): string {
 
 function getDisplayName(item: CmsStorageObject): string {
   return item.filename || item.key.split("/").filter(Boolean).pop() || item.key;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const formatted = new Intl.DateTimeFormat(localeTag.value, {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+
+  return locale.value === "zh" ? formatted.replace(/\//g, ".") : formatted;
 }
 </script>
 
@@ -128,7 +149,7 @@ function getDisplayName(item: CmsStorageObject): string {
           <p v-else class="article-empty">{{ t("cms.storage.table.noRelation") }}</p>
         </div>
 
-        <time class="mono" :datetime="item.updatedAt">{{ formatShanghaiDateTime(item.updatedAt) }}</time>
+        <time class="mono" :datetime="item.updatedAt">{{ formatDateTime(item.updatedAt) }}</time>
 
         <div class="actions">
           <button type="button" :title="t('cms.storage.table.previewObject')" @click="emit('preview', item)">
@@ -183,7 +204,7 @@ function getDisplayName(item: CmsStorageObject): string {
           >
             {{ t(articleStatusMap[item.relatedArticle.articleStatus].label) }}
           </span>
-          <time class="mono" :datetime="item.updatedAt">{{ formatShanghaiDateTime(item.updatedAt) }}</time>
+          <time class="mono" :datetime="item.updatedAt">{{ formatDateTime(item.updatedAt) }}</time>
         </div>
 
         <div class="actions">

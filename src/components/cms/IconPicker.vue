@@ -1,8 +1,24 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
+import { useI18n } from "@/i18n/useI18n";
 
 defineProps<{ modelValue: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+
+const { locale } = useI18n();
+
+const text = computed(() =>
+  locale.value === "en"
+    ? {
+        openIconify: "Browse icons in Iconify",
+        placeholder: "ph:code",
+      }
+    : {
+        openIconify: "在 Iconify 中查看图标",
+        placeholder: "ph:code",
+      },
+);
 </script>
 
 <template>
@@ -12,15 +28,15 @@ const emit = defineEmits<{ "update:modelValue": [value: string] }>();
       href="https://icon-sets.iconify.design"
       target="_blank"
       rel="noopener noreferrer"
-      title="在 Iconify 中查看图标"
-      aria-label="在 Iconify 中查看图标"
+      :title="text.openIconify"
+      :aria-label="text.openIconify"
     >
       <IconifyIcon :icon="modelValue || 'ph:code'" :size="30" />
     </a>
     <input
       :value="modelValue"
       type="text"
-      placeholder="ph:code"
+      :placeholder="text.placeholder"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
   </div>

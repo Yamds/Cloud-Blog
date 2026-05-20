@@ -5,11 +5,32 @@ import { getCmsAnalyticsSummary } from "@/api/analytics";
 import { isApiError } from "@/api/http";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import type { CmsAnalyticsSummary } from "@/types/cms";
+
+type MessageState =
+  | {
+      key: MessageKey;
+      params?: Record<string, string | number>;
+    }
+  | {
+      text: string;
+    };
 
 const summary = ref<CmsAnalyticsSummary | null>(null);
 const loading = ref(true);
-const notice = ref("");
+const notice = ref<MessageState | null>(null);
+const { locale, t } = useI18n();
+
+const noticeText = computed(() => {
+  if (!notice.value) {
+    return "";
+  }
+
+  return "text" in notice.value ? notice.value.text : t(notice.value.key, notice.value.params);
+});
+const localeTag = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const maxDailyViews = computed(() =>
   Math.max(...(summary.value?.dailyViews.map((item) => item.views) ?? [0]), 1),
@@ -20,24 +41,35 @@ const maxPathViews = computed(() =>
 
 async function loadAnalytics(): Promise<void> {
   loading.value = true;
-  notice.value = "";
+  notice.value = null;
 
   try {
     summary.value = await getCmsAnalyticsSummary();
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "Failed to load analytics.";
+    notice.value = isApiError(error) ? { text: error.message } : { key: "cms.analytics.loadFailed" };
   } finally {
     loading.value = false;
   }
 }
 
 function formatCount(value: number): string {
-  return new Intl.NumberFormat("zh-CN").format(value);
+  return new Intl.NumberFormat(localeTag.value).format(value);
 }
 
 function formatDay(value: string): string {
-  const [, month = "", day = ""] = value.split("-");
-  return `${month}.${day}`;
+  const date = new Date(`${value}T00:00:00+08:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const formatted = new Intl.DateTimeFormat(localeTag.value, {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+  return locale.value === "zh" ? formatted.replace(/\//g, ".") : formatted;
 }
 
 onMounted(() => {
@@ -46,40 +78,40 @@ onMounted(() => {
 </script>
 
 <template>
-  <CmsShell title="访问分析" subtitle="查看最近访问趋势、热门文章和主要入口。">
-    <p v-if="notice" class="notice">{{ notice }}</p>
+  <CmsShell :title="t('cms.analytics.title')" :subtitle="t('cms.analytics.subtitle')">
+    <p v-if="noticeText" class="notice">{{ noticeText }}</p>
 
     <section class="top-actions">
       <button type="button" class="text-action" :disabled="loading" @click="loadAnalytics">
         <IconifyIcon icon="ph:arrows-clockwise" :size="16" />
-        {{ loading ? "同步中" : "刷新" }}
+        {{ loading ? t("cms.analytics.refreshing") : t("cms.shared.refresh") }}
       </button>
     </section>
 
     <section v-if="summary" class="metric-grid">
       <article class="metric-card">
-        <span>总浏览</span>
+        <span>{{ t("cms.analytics.metricTotalViews") }}</span>
         <strong>{{ formatCount(summary.totalViews) }}</strong>
       </article>
       <article class="metric-card">
-        <span>今日浏览</span>
+        <span>{{ t("cms.analytics.metricTodayViews") }}</span>
         <strong>{{ formatCount(summary.todayViews) }}</strong>
       </article>
       <article class="metric-card">
-        <span>近 7 日</span>
+        <span>{{ t("cms.analytics.metricLast7Days") }}</span>
         <strong>{{ formatCount(summary.last7DaysViews) }}</strong>
       </article>
       <article class="metric-card">
-        <span>热门文章</span>
-        <strong>{{ summary.popularArticles.length }}</strong>
+        <span>{{ t("cms.analytics.metricPopularArticles") }}</span>
+        <strong>{{ formatCount(summary.popularArticles.length) }}</strong>
       </article>
     </section>
 
     <section v-if="summary" class="analytics-grid">
       <article class="panel trend-panel">
         <div class="panel-heading">
-          <h2>最近 7 天</h2>
-          <span>按上海时区聚合</span>
+          <h2>{{ t("cms.analytics.trendTitle") }}</h2>
+          <span>{{ t("cms.analytics.trendMeta") }}</span>
         </div>
         <ol class="trend-list">
           <li v-for="point in summary.dailyViews" :key="point.date">
@@ -94,8 +126,8 @@ onMounted(() => {
 
       <article class="panel">
         <div class="panel-heading">
-          <h2>热门文章</h2>
-          <span>近 7 日</span>
+          <h2>{{ t("cms.analytics.popularTitle") }}</h2>
+          <span>{{ t("cms.analytics.popularMeta") }}</span>
         </div>
         <ol v-if="summary.popularArticles.length" class="rank-list">
           <li v-for="article in summary.popularArticles" :key="article.articleId">
@@ -103,13 +135,13 @@ onMounted(() => {
             <strong>{{ formatCount(article.views) }}</strong>
           </li>
         </ol>
-        <p v-else class="empty-note">还没有文章浏览记录。</p>
+        <p v-else class="empty-note">{{ t("cms.analytics.popularEmpty") }}</p>
       </article>
 
       <article class="panel">
         <div class="panel-heading">
-          <h2>热门路径</h2>
-          <span>近 7 日</span>
+          <h2>{{ t("cms.analytics.pathsTitle") }}</h2>
+          <span>{{ t("cms.analytics.pathsMeta") }}</span>
         </div>
         <ol v-if="summary.topPaths.length" class="path-list">
           <li v-for="item in summary.topPaths" :key="item.path">
@@ -120,13 +152,13 @@ onMounted(() => {
             <strong>{{ formatCount(item.views) }}</strong>
           </li>
         </ol>
-        <p v-else class="empty-note">还没有路径数据。</p>
+        <p v-else class="empty-note">{{ t("cms.analytics.pathsEmpty") }}</p>
       </article>
 
       <article class="panel">
         <div class="panel-heading">
-          <h2>来源域名</h2>
-          <span>近 7 日</span>
+          <h2>{{ t("cms.analytics.referrersTitle") }}</h2>
+          <span>{{ t("cms.analytics.referrersMeta") }}</span>
         </div>
         <ol v-if="summary.topReferrers.length" class="rank-list">
           <li v-for="item in summary.topReferrers" :key="item.referrerHost">
@@ -134,11 +166,11 @@ onMounted(() => {
             <strong>{{ formatCount(item.views) }}</strong>
           </li>
         </ol>
-        <p v-else class="empty-note">暂无外部来源数据。</p>
+        <p v-else class="empty-note">{{ t("cms.analytics.referrersEmpty") }}</p>
       </article>
     </section>
 
-    <p v-else-if="loading" class="notice">正在读取访问分析...</p>
+    <p v-else-if="loading" class="notice">{{ t("cms.analytics.loading") }}</p>
   </CmsShell>
 </template>
 

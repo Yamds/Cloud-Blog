@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import type {
   CmsStorageArticleOption,
   CmsStorageObjectType,
   CmsStorageUploadCandidate,
 } from "@/types/cms";
+
+type MessageState = {
+  key: MessageKey;
+  params?: Record<string, string | number>;
+};
 
 const props = defineProps<{
   articleOptions: CmsStorageArticleOption[];
@@ -20,7 +27,12 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const selectedFiles = ref<File[]>([]);
 const isDragging = ref(false);
 const relatedArticleId = ref("");
-const selectionMessage = ref("");
+const selectionMessage = ref<MessageState | null>(null);
+const { t } = useI18n();
+
+const selectionMessageText = computed(() =>
+  selectionMessage.value ? t(selectionMessage.value.key, selectionMessage.value.params) : "",
+);
 
 const queueItems = computed(() =>
   selectedFiles.value.map((file) => ({
@@ -64,7 +76,7 @@ function openPicker(): void {
 function appendFiles(fileList: FileList | null): void {
   if (!fileList) return;
 
-  selectionMessage.value = "";
+  selectionMessage.value = null;
 
   const existingKeys = new Set(selectedFiles.value.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
   const imageFiles = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
@@ -79,7 +91,7 @@ function appendFiles(fileList: FileList | null): void {
   }
 
   if (skippedCount > 0) {
-    selectionMessage.value = `已忽略 ${skippedCount} 个非图片文件。`;
+    selectionMessage.value = { key: "cms.storage.upload.ignoredNonImages", params: { count: skippedCount } };
   }
 }
 
@@ -96,7 +108,7 @@ function removeFile(id: string): void {
 
 function clearFiles(): void {
   selectedFiles.value = [];
-  selectionMessage.value = "";
+  selectionMessage.value = null;
 }
 
 function onDragOver(event: DragEvent): void {
@@ -131,7 +143,7 @@ function enqueueFiles(): void {
 
   emit("enqueue", items);
   selectedFiles.value = [];
-  selectionMessage.value = "";
+  selectionMessage.value = null;
 }
 </script>
 
@@ -139,12 +151,12 @@ function enqueueFiles(): void {
   <section class="upload-card">
     <div class="header">
       <div>
-        <h2>上传图片</h2>
-        <p>把正文图片发到 R2，并按需挂到文章名下。</p>
+        <h2>{{ t("cms.storage.upload.title") }}</h2>
+        <p>{{ t("cms.storage.upload.subtitle") }}</p>
       </div>
       <button type="button" class="ghost-btn" :disabled="props.uploading" @click="openPicker">
         <IconifyIcon icon="ph:plus" :size="16" />
-        选择图片
+        {{ t("cms.storage.upload.selectImages") }}
       </button>
     </div>
 
@@ -161,15 +173,15 @@ function enqueueFiles(): void {
       @drop="onDrop"
     >
       <IconifyIcon icon="ph:upload-simple" :size="24" />
-      <strong>拖拽图片到这里，或点击选择</strong>
-      <span>当前只接入 image/* 上传，单张建议控制在 5MB 以内。</span>
+      <strong>{{ t("cms.storage.upload.dropzoneTitle") }}</strong>
+      <span>{{ t("cms.storage.upload.dropzoneHint") }}</span>
     </button>
 
     <div class="config-grid">
       <label class="field">
-        <span>关联文章</span>
+        <span>{{ t("cms.storage.upload.relatedArticle") }}</span>
         <select v-model="relatedArticleId" :disabled="props.uploading">
-          <option value="">暂不关联</option>
+          <option value="">{{ t("cms.storage.upload.noRelationOption") }}</option>
           <option v-for="article in articleOptions" :key="article.id" :value="article.id">
             {{ article.title }}
           </option>
@@ -177,7 +189,7 @@ function enqueueFiles(): void {
       </label>
     </div>
 
-    <p v-if="selectionMessage" class="selection-message">{{ selectionMessage }}</p>
+    <p v-if="selectionMessageText" class="selection-message">{{ selectionMessageText }}</p>
 
     <ul v-if="queueItems.length" class="queue">
       <li v-for="item in queueItems" :key="item.id" class="queue-item">
@@ -191,21 +203,27 @@ function enqueueFiles(): void {
           </div>
         </div>
 
-        <button type="button" class="remove-btn" title="移出队列" :disabled="props.uploading" @click.stop="removeFile(item.id)">
+        <button
+          type="button"
+          class="remove-btn"
+          :title="t('cms.storage.upload.removeFromQueue')"
+          :disabled="props.uploading"
+          @click.stop="removeFile(item.id)"
+        >
           <IconifyIcon icon="ph:x" :size="16" />
         </button>
       </li>
     </ul>
 
-    <p v-else class="empty-state">先选几张正文图片，再决定是否关联到某篇文章。</p>
+    <p v-else class="empty-state">{{ t("cms.storage.upload.emptyQueue") }}</p>
 
     <div class="actions">
       <button type="button" class="ghost-btn" :disabled="isSubmitDisabled || props.uploading" @click="clearFiles">
-        清空队列
+        {{ t("cms.storage.upload.clearQueue") }}
       </button>
       <button type="button" class="primary-btn" :disabled="isSubmitDisabled || props.uploading" @click="enqueueFiles">
         <IconifyIcon icon="ph:tray-arrow-down" :size="16" />
-        {{ props.uploading ? "上传中..." : "开始上传" }}
+        {{ props.uploading ? t("cms.storage.upload.uploading") : t("cms.storage.upload.start") }}
       </button>
     </div>
   </section>

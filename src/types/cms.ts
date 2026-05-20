@@ -148,7 +148,7 @@ export interface CmsLocalizedContentDraft {
 }
 
 export interface CmsAiAction {
-  key: "summary" | "polish" | "tags" | "format";
+  key: "summary" | "polish" | "tags" | "format" | "translate";
   label: string;
   description: string;
 }

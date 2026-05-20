@@ -10,15 +10,35 @@ import {
 import { isApiError } from "@/api/http";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import type { CmsComment } from "@/types/cms";
-import { formatShanghaiDateTime } from "@/utils/date";
+
+type MessageState =
+  | {
+      key: MessageKey;
+      params?: Record<string, string | number>;
+    }
+  | {
+      text: string;
+    };
 
 const comments = ref<CmsComment[]>([]);
 const loading = ref(true);
 const busyId = ref("");
-const notice = ref("");
+const notice = ref<MessageState | null>(null);
 const query = ref("");
 const statusFilter = ref<"all" | CmsComment["status"]>("all");
+const { locale, t } = useI18n();
+
+const noticeText = computed(() => {
+  if (!notice.value) {
+    return "";
+  }
+
+  return "text" in notice.value ? notice.value.text : t(notice.value.key, notice.value.params);
+});
+const localeTag = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const filteredComments = computed(() => {
   const keyword = query.value.trim().toLowerCase();
@@ -50,12 +70,12 @@ const stats = computed(() => ({
 
 async function loadComments(): Promise<void> {
   loading.value = true;
-  notice.value = "";
+  notice.value = null;
 
   try {
     comments.value = await getCmsComments();
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "Failed to load comments.";
+    notice.value = isApiError(error) ? { text: error.message } : { key: "cms.comments.loadFailed" };
   } finally {
     loading.value = false;
   }
@@ -63,12 +83,12 @@ async function loadComments(): Promise<void> {
 
 async function runAction(comment: CmsComment, action: "hide" | "restore" | "delete"): Promise<void> {
   if (action === "delete") {
-    const confirmed = window.confirm("Delete this comment? It will no longer appear on the public page.");
+    const confirmed = window.confirm(t("cms.comments.deleteConfirm"));
     if (!confirmed) return;
   }
 
   busyId.value = comment.id;
-  notice.value = "";
+  notice.value = null;
 
   try {
     const updated =
@@ -81,19 +101,43 @@ async function runAction(comment: CmsComment, action: "hide" | "restore" | "dele
     comments.value = comments.value.map((item) => (item.id === updated.id ? updated : item));
     notice.value =
       action === "hide"
-        ? "Comment hidden."
+        ? { key: "cms.comments.hiddenNotice" }
         : action === "restore"
-          ? "Comment restored."
-          : "Comment deleted.";
+          ? { key: "cms.comments.restoredNotice" }
+          : { key: "cms.comments.deletedNotice" };
   } catch (error) {
-    notice.value = isApiError(error) ? error.message : "Action failed. Please try again.";
+    notice.value = isApiError(error) ? { text: error.message } : { key: "cms.comments.actionFailed" };
   } finally {
     busyId.value = "";
   }
 }
 
 function statusLabel(status: CmsComment["status"]): string {
-  return status === "visible" ? "Visible" : status === "hidden" ? "Hidden" : "Deleted";
+  return status === "visible"
+    ? t("cms.comments.statusVisible")
+    : status === "hidden"
+      ? t("cms.comments.statusHidden")
+      : t("cms.comments.statusDeleted");
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const formatted = new Intl.DateTimeFormat(localeTag.value, {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+
+  return locale.value === "zh" ? formatted.replace(/\//g, ".") : formatted;
 }
 
 onMounted(() => {
@@ -102,55 +146,55 @@ onMounted(() => {
 </script>
 
 <template>
-  <CmsShell title="评论管理" subtitle="查看、隐藏、恢复或删除公开文章下的评论。">
-    <p v-if="notice" class="notice">{{ notice }}</p>
+  <CmsShell :title="t('cms.comments.title')" :subtitle="t('cms.comments.subtitle')">
+    <p v-if="noticeText" class="notice">{{ noticeText }}</p>
 
     <section class="stat-grid">
       <div class="stat-item">
-        <span>总评论</span>
+        <span>{{ t("cms.comments.statsTotal") }}</span>
         <strong>{{ stats.total }}</strong>
       </div>
       <div class="stat-item">
-        <span>可见</span>
+        <span>{{ t("cms.comments.statsVisible") }}</span>
         <strong>{{ stats.visible }}</strong>
       </div>
       <div class="stat-item">
-        <span>隐藏</span>
+        <span>{{ t("cms.comments.statsHidden") }}</span>
         <strong>{{ stats.hidden }}</strong>
       </div>
       <div class="stat-item">
-        <span>删除</span>
+        <span>{{ t("cms.comments.statsDeleted") }}</span>
         <strong>{{ stats.deleted }}</strong>
       </div>
     </section>
 
     <section class="toolbar">
-      <input v-model="query" type="search" placeholder="搜索作者、文章或评论内容" />
-      <select v-model="statusFilter" aria-label="评论状态">
-        <option value="all">全部状态</option>
-        <option value="visible">可见</option>
-        <option value="hidden">隐藏</option>
-        <option value="deleted">删除</option>
+      <input v-model="query" type="search" :placeholder="t('cms.comments.searchPlaceholder')" />
+      <select v-model="statusFilter" :aria-label="t('cms.comments.statusFilterLabel')">
+        <option value="all">{{ t("cms.comments.statusAll") }}</option>
+        <option value="visible">{{ t("cms.comments.statusVisible") }}</option>
+        <option value="hidden">{{ t("cms.comments.statusHidden") }}</option>
+        <option value="deleted">{{ t("cms.comments.statusDeleted") }}</option>
       </select>
       <button type="button" class="text-action" :disabled="loading" @click="loadComments">
         <IconifyIcon icon="ph:arrows-clockwise" :size="16" />
-        {{ loading ? "读取中" : "刷新" }}
+        {{ loading ? t("cms.shared.loading") : t("cms.shared.refresh") }}
       </button>
     </section>
 
     <section class="comments-table">
-      <p v-if="loading" class="state-line">正在读取评论...</p>
-      <p v-else-if="filteredComments.length === 0" class="state-line">当前筛选下没有评论。</p>
+      <p v-if="loading" class="state-line">{{ t("cms.comments.loading") }}</p>
+      <p v-else-if="filteredComments.length === 0" class="state-line">{{ t("cms.comments.empty") }}</p>
 
       <article v-for="comment in filteredComments" :key="comment.id" class="comment-row">
         <div class="comment-main">
           <div class="comment-meta">
             <strong>{{ comment.authorName }}</strong>
             <span class="status-pill" :class="comment.status">{{ statusLabel(comment.status) }}</span>
-            <time :datetime="comment.createdAt">{{ formatShanghaiDateTime(comment.createdAt) }}</time>
+            <time :datetime="comment.createdAt">{{ formatDateTime(comment.createdAt) }}</time>
           </div>
           <p class="comment-content">
-            {{ comment.status === "deleted" ? "这条评论已删除。" : comment.content }}
+            {{ comment.status === "deleted" ? t("cms.comments.deletedContent") : comment.content }}
           </p>
           <RouterLink class="article-link text-link" :to="`/articles/${comment.articleSlug}`">
             {{ comment.articleTitle }}
@@ -165,7 +209,7 @@ onMounted(() => {
             :disabled="busyId === comment.id"
             @click="runAction(comment, 'hide')"
           >
-            隐藏
+            {{ t("cms.comments.actionHide") }}
           </button>
           <button
             v-if="comment.status === 'hidden'"
@@ -174,7 +218,7 @@ onMounted(() => {
             :disabled="busyId === comment.id"
             @click="runAction(comment, 'restore')"
           >
-            恢复
+            {{ t("cms.comments.actionRestore") }}
           </button>
           <button
             class="text-action"
@@ -182,7 +226,7 @@ onMounted(() => {
             :disabled="busyId === comment.id || comment.status === 'deleted'"
             @click="runAction(comment, 'delete')"
           >
-            删除
+            {{ t("cms.shared.delete") }}
           </button>
         </div>
       </article>

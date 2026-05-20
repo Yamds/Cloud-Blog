@@ -6,6 +6,8 @@ import CmsShell from "@/components/cms/CmsShell.vue";
 import StorageFilters from "@/components/cms/StorageFilters.vue";
 import StorageObjectsTable from "@/components/cms/StorageObjectsTable.vue";
 import StorageOverview from "@/components/cms/StorageOverview.vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import type {
   CmsDeleteMediaConflictDetails,
   CmsStorageFilters as CmsStorageFiltersModel,
@@ -13,10 +15,28 @@ import type {
   CmsStorageSummary,
 } from "@/types/cms";
 
+type MessageState =
+  | {
+      key: MessageKey;
+      params?: Record<string, string | number>;
+    }
+  | {
+      referenceDetails: CmsDeleteMediaConflictDetails;
+    };
+
 const storageObjects = ref<CmsStorageObject[]>([]);
-const actionMessage = ref("正在读取对象存储中的媒体对象。");
 const loading = ref(true);
 const deletePendingId = ref<string | null>(null);
+const { locale, t } = useI18n();
+const actionMessage = ref<MessageState>({ key: "cms.storage.loadingInitial" });
+const actionMessageText = computed(() => {
+  if ("referenceDetails" in actionMessage.value) {
+    return formatReferenceReason(actionMessage.value.referenceDetails);
+  }
+
+  return t(actionMessage.value.key, actionMessage.value.params);
+});
+const localeTag = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const filters = ref<CmsStorageFiltersModel>({
   query: "",
@@ -98,7 +118,7 @@ const filteredObjects = computed(() => {
     }
 
     if (filters.value.sortBy === "key") {
-      return getDisplayName(left).localeCompare(getDisplayName(right), "zh-CN");
+      return getDisplayName(left).localeCompare(getDisplayName(right), localeTag.value);
     }
 
     return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
@@ -112,7 +132,7 @@ const filteredBytes = computed(() =>
 );
 
 function buildErrorMessage(error: unknown): string {
-  return isApiError(error) ? error.message : "请求失败，请稍后重试。";
+  return isApiError(error) ? error.message : t("cms.storage.requestFailed");
 }
 
 function extractDeleteConflictDetails(error: unknown): CmsDeleteMediaConflictDetails | null {
@@ -137,25 +157,30 @@ function extractDeleteConflictDetails(error: unknown): CmsDeleteMediaConflictDet
 
 function formatReferenceReason(details: CmsDeleteMediaConflictDetails): string {
   if (details.references.length === 0) {
-    return "该媒体仍被正文引用，默认阻止删除。";
+    return t("cms.storage.referenceBlocked");
   }
 
   const lines = details.references.map((reference, index) => {
     const via = reference.matchedBy
-      .map((entry) => (entry === "url" ? "URL" : "object key"))
+      .map((entry) => (entry === "url" ? t("cms.storage.referenceViaUrl") : t("cms.storage.referenceViaObjectKey")))
       .join(" + ");
 
     const statusLabel =
       reference.articleStatus === "published"
-        ? "已发布"
+        ? t("cms.storage.articleStatusPublished")
         : reference.articleStatus === "draft"
-          ? "草稿"
-          : "归档";
+          ? t("cms.storage.articleStatusDraft")
+          : t("cms.storage.articleStatusArchived");
 
-    return `${index + 1}. [${statusLabel}] ${reference.articleTitle}（${via}）`;
+    return t("cms.storage.referenceLine", {
+      index: index + 1,
+      status: statusLabel,
+      title: reference.articleTitle,
+      via,
+    });
   });
 
-  return [`删除已被阻止，以下文章正文仍在引用这个媒体：`, ...lines].join("\n");
+  return [t("cms.storage.referenceHeader"), ...lines].join("\n");
 }
 
 function getDisplayName(item: CmsStorageObject): string {
@@ -175,17 +200,19 @@ async function loadStorageData(options: { silent?: boolean } = {}): Promise<void
     (value) => ({ status: "fulfilled" as const, value }),
     (reason) => ({ status: "rejected" as const, reason }),
   );
-  const notes: string[] = [];
-
   if (mediaResult.status === "fulfilled") {
     storageObjects.value = mediaResult.value.objects;
-    notes.push(`已加载 ${mediaResult.value.objects.length} 个媒体对象。`);
+    actionMessage.value = {
+      key: "cms.storage.loadSuccess",
+      params: { count: mediaResult.value.objects.length },
+    };
   } else {
     storageObjects.value = [];
-    notes.push(`对象列表读取失败：${buildErrorMessage(mediaResult.reason)}`);
+    actionMessage.value = {
+      key: "cms.storage.loadFailed",
+      params: { message: buildErrorMessage(mediaResult.reason) },
+    };
   }
-
-  actionMessage.value = notes.join(" ");
   loading.value = false;
 }
 
@@ -195,61 +222,66 @@ async function handleCopy(item: CmsStorageObject): Promise<void> {
   try {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       await navigator.clipboard.writeText(targetUrl);
-      actionMessage.value = `已复制访问路径：${targetUrl}`;
+      actionMessage.value = { key: "cms.storage.copiedPath", params: { path: targetUrl } };
       return;
     }
   } catch {
     // Fall through to the fallback message below.
   }
 
-  actionMessage.value = "当前环境不支持剪贴板写入，可直接从列表中复制访问路径。";
+  actionMessage.value = { key: "cms.storage.clipboardUnsupported" };
 }
 
 function handlePreview(item: CmsStorageObject): void {
   const targetUrl = getPublicMediaUrl(item);
 
   window.open(targetUrl, "_blank", "noopener,noreferrer");
-  actionMessage.value = `已打开预览：${getDisplayName(item)}`;
+  actionMessage.value = { key: "cms.storage.previewOpened", params: { name: getDisplayName(item) } };
 }
 
 async function handleRemove(item: CmsStorageObject): Promise<void> {
   const displayName = getDisplayName(item);
-  const confirmed = window.confirm(`确认删除这个文件吗？\n${displayName}`);
+  const confirmed = window.confirm(t("cms.storage.deleteConfirm", { name: displayName }));
 
   if (!confirmed) {
     return;
   }
 
-  actionMessage.value = `正在删除：${displayName}`;
+  actionMessage.value = { key: "cms.storage.deleting", params: { name: displayName } };
   deletePendingId.value = item.id;
 
   try {
     await deleteCmsMediaObject(item.id);
     storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
-    actionMessage.value = `已删除文件与元数据：${displayName}`;
+    actionMessage.value = { key: "cms.storage.deleted", params: { name: displayName } };
   } catch (error) {
     const conflictDetails = extractDeleteConflictDetails(error);
 
     if (conflictDetails) {
-      actionMessage.value = formatReferenceReason(conflictDetails);
+      actionMessage.value = { referenceDetails: conflictDetails };
 
       const forceConfirmed = window.confirm(
-        `${formatReferenceReason(conflictDetails)}\n\n如确认这批正文引用已失效，可继续强制删除。`,
+        t("cms.storage.forceDeleteConfirm", {
+          reason: formatReferenceReason(conflictDetails),
+        }),
       );
 
       if (forceConfirmed) {
-        actionMessage.value = `正在强制删除：${displayName}`;
+        actionMessage.value = { key: "cms.storage.forceDeleting", params: { name: displayName } };
 
         try {
           await deleteCmsMediaObject(item.id, { force: true });
           storageObjects.value = storageObjects.value.filter((current) => current.id !== item.id);
-          actionMessage.value = `已强制删除文件：${displayName}。请尽快清理对应文章中的失效引用。`;
+          actionMessage.value = { key: "cms.storage.forceDeleted", params: { name: displayName } };
         } catch (forceError) {
-          actionMessage.value = `强制删除失败：${buildErrorMessage(forceError)}`;
+          actionMessage.value = {
+            key: "cms.storage.forceDeleteFailed",
+            params: { message: buildErrorMessage(forceError) },
+          };
         }
       }
     } else {
-      actionMessage.value = `删除失败：${buildErrorMessage(error)}`;
+      actionMessage.value = { key: "cms.storage.deleteFailed", params: { message: buildErrorMessage(error) } };
     }
   } finally {
     deletePendingId.value = null;
@@ -262,12 +294,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <CmsShell title="对象存储" subtitle="管理正文图片，以及它们与文章之间的关系。">
+  <CmsShell :title="t('cms.storage.title')" :subtitle="t('cms.storage.subtitle')">
     <p class="status-line">
-      {{ loading ? "正在同步对象列表..." : actionMessage }}
+      {{ loading ? t("cms.storage.loadingList") : actionMessageText }}
     </p>
     <p v-if="deletePendingId" class="status-line status-line--active">
-      删除进行中，正在校验正文引用并同步对象存储。
+      {{ t("cms.storage.deletePending") }}
     </p>
 
     <StorageOverview

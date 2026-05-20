@@ -11,6 +11,7 @@ import StatCard from "@/components/cms/StatCard.vue";
 import type { CmsAnalyticsSummary, CmsArticleDetail, CmsArticleRow, CmsArticleStats, CmsStatItem } from "@/types/cms";
 import { formatShanghaiDate } from "@/utils/date";
 
+const { t } = useI18n();
 const articles = ref<CmsArticleRow[]>([]);
 const stats = ref<CmsStatItem[]>(createEmptyStats());
 const analyticsSummary = ref<CmsAnalyticsSummary | null>(null);
@@ -19,7 +20,6 @@ const archiveBusyId = ref<string | null>(null);
 const deleteBusyId = ref<string | null>(null);
 const fallbackNotice = ref("");
 const actionNotice = ref("");
-const { t } = useI18n();
 
 const archiveDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));
 const deleteDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));

@@ -57,6 +57,7 @@ import IconPicker from "@/components/cms/IconPicker.vue";
 import PublishPanel from "@/components/cms/PublishPanel.vue";
 import TagEditor from "@/components/cms/TagEditor.vue";
 import { cmsAiActions, cmsEditorInitialDraft } from "@/data/cms";
+import { useI18n } from "@/i18n/useI18n";
 import type {
   CmsArticleDetail,
   CmsArticleAutosave,
@@ -70,6 +71,7 @@ import { formatShanghaiDateTime, formatShanghaiTime } from "@/utils/date";
 
 const route = useRoute();
 const router = useRouter();
+const { locale } = useI18n();
 
 interface CmsLocalizedEditorDraft extends CmsLocalizedContentDraft {
   articleId: string;
@@ -177,9 +179,261 @@ const articleId = computed(() => {
 });
 
 const isNewArticle = computed(() => articleId.value === "new" || !localizedDrafts.zh.articleId);
-const pageTitle = computed(() => (isNewArticle.value ? "新建文章" : "编辑文章"));
+const editorText = computed(() =>
+  locale.value === "en"
+    ? {
+        newTitle: "New Article",
+        editTitle: "Edit Article",
+        newSubtitle: "Start the draft first, then save and refine the details.",
+        editSubtitle: "Keep it light, save anytime, and decide when to publish.",
+        toolbar: {
+          bold: "Bold",
+          italic: "Italic",
+          wavyUnderline: "Wavy underline",
+          underline: "Underline",
+          strike: "Strikethrough",
+          quote: "Quote",
+          inlineCode: "Inline code",
+          code: "Code block",
+          bullet: "Bulleted list",
+          ordered: "Numbered list",
+          link: "Link",
+          image: "Image",
+          superscript: "Superscript",
+          subscript: "Subscript",
+          alignLeft: "Align left",
+          alignCenter: "Align center",
+          alignRight: "Align right",
+          table: "Add table",
+        },
+        colors: {
+          defaultText: "Default text",
+          accent: "Accent",
+          secondary: "Secondary text",
+          warm: "Warm",
+          green: "Green",
+          rose: "Rose",
+          noBackground: "No background",
+          softAccent: "Soft accent",
+          softWarm: "Soft warm",
+          softGreen: "Soft green",
+          softRose: "Soft rose",
+        },
+        autoPlainText: "Auto / plain text",
+        writingPlaceholder: "Start writing...",
+        loadArticleFailedWithMessage: "Article details failed to load. Keeping the local draft view: {message}",
+        loadArticleFailed: "Article details failed to load. Keeping the local draft view.",
+        restoreAutosaveConfirm: "Restore the autosave from {time}? Current edits will be overwritten.",
+        restoredAutosave: "Restored from autosave. Review it, then save manually.",
+        revisionsLoadFailed: "Failed to load revisions.",
+        saved: "Article saved.",
+        saveFailed: "Save failed. Please try again later.",
+        published: "Article published.",
+        publishFailed: "Publish failed. Please try again later.",
+        restoreRevisionConfirm: "Restore the revision from {time}? Current edits will be overwritten.",
+        restoredRevision: "Selected revision restored.",
+        restoreRevisionFailed: "Failed to restore revision. Please try again later.",
+        revisionReason: {
+          manual_save: "Save",
+          publish: "Publish",
+          archive: "Archive",
+          rollback: "Version restore",
+        },
+        previewNeedsSlug: "Save the article and generate a slug before previewing the public page.",
+        aiRunning: "AI is processing the current body...",
+        aiNeedsContent: "Write article body content before using AI actions.",
+        aiSummaryDone: "Summary candidate generated: {summary}",
+        aiTagsDone: "Added tags: {tags}",
+        aiPolishDone: "Replaced the body with the polished result.",
+        aiFormatDone: "Structured formatting generated and inserted into the editor.",
+        aiFailed: "AI action failed. Please try again later.",
+        aiTranslating: "AI is translating the English draft...",
+        aiNeedsChinese: "Complete the Chinese body before generating the English draft.",
+        aiTranslateDone: "English draft generated. Review it before saving or publishing.",
+        aiTranslateFailed: "AI translation failed. Please try again later.",
+        linkUrlPrompt: "Link URL",
+        imageUrlPrompt: "Image URL",
+        invalidImageUrl: "Enter an http/https image URL or an existing /api/cms/media address.",
+        imageLinkInserted: "Image link inserted.",
+        saveForImage: "Saving the article first so the image can be linked to it...",
+        saveForExternalImage: "Saving the article first so the external image can be linked to it...",
+        imageUploaded: "Image uploaded and inserted into the body.",
+        imageUploadFailed: "Image upload failed. Please try again later.",
+        imageUploadFallbackPrompt: "Image upload failed. Enter a URL manually instead",
+        manualImageInserted: "Inserted the manual image URL instead.",
+        imageConverting: "Transferring external image to the media library...",
+        imageConverted: "External image transferred to the media library.",
+        imageConvertFailed: "External image transfer failed. Please try again later.",
+        autosaveFound: "New autosave found",
+        autosaveFoundDetail: "Saved at {time}. Restore it, then save manually if it looks right.",
+        restoreAutosave: "Restore autosave",
+        preview: "Preview",
+        save: "Save",
+        saving: "Saving...",
+        publish: "Publish",
+        publishing: "Publishing...",
+        titlePlaceholderZh: "Article title...",
+        titlePlaceholderEn: "English title...",
+        body: "Body",
+        codeLanguage: "Code language",
+        tableEdit: "Table editing",
+        addRow: "Add row",
+        addColumn: "Add column",
+        deleteRow: "Delete row",
+        deleteColumn: "Delete column",
+        transferToMedia: "Transfer to media library",
+        transferring: "Transferring...",
+        articleIcon: "Article icon",
+        tags: "Tags",
+        summaryZh: "Article Summary",
+        summaryEn: "English Summary",
+        summaryPlaceholderZh: "Write a short summary for the article list...",
+        summaryPlaceholderEn: "Write a short English summary...",
+        summaryHelpZh: "AI summaries are written here and synced to the home page and article list after saving.",
+        summaryHelpEn: "English summary is saved alongside the Chinese article.",
+        slugTitle: "Public URL",
+        slugAria: "Article public URL",
+        slugPlaceholder: "article-name",
+        slugHelp: "Leave it empty to generate a slug from the title.",
+        outline: "Outline",
+        revisions: "Versions",
+        refresh: "Refresh",
+        revisionNeedsSave: "Versions are recorded after the first save.",
+        revisionsLoading: "Loading versions...",
+        restore: "Restore",
+        revisionsEmpty: "No versions yet.",
+      }
+    : {
+        newTitle: "新建文章",
+        editTitle: "编辑文章",
+        newSubtitle: "先写下草稿，保存后再继续整理细节。",
+        editSubtitle: "保持轻量，随时保存，再决定何时发布。",
+        toolbar: {
+          bold: "加粗",
+          italic: "斜体",
+          wavyUnderline: "波浪下划线",
+          underline: "下划线",
+          strike: "删除线",
+          quote: "引用",
+          inlineCode: "行内代码",
+          code: "代码块",
+          bullet: "无序列表",
+          ordered: "有序列表",
+          link: "链接",
+          image: "图片",
+          superscript: "上角标",
+          subscript: "下角标",
+          alignLeft: "左对齐",
+          alignCenter: "居中对齐",
+          alignRight: "右对齐",
+          table: "添加表格",
+        },
+        colors: {
+          defaultText: "默认文字",
+          accent: "强调色",
+          secondary: "次级文字",
+          warm: "暖色",
+          green: "绿色",
+          rose: "玫瑰色",
+          noBackground: "无背景",
+          softAccent: "浅强调",
+          softWarm: "浅暖色",
+          softGreen: "浅绿色",
+          softRose: "浅玫瑰",
+        },
+        autoPlainText: "自动/纯文本",
+        writingPlaceholder: "开始写作...",
+        loadArticleFailedWithMessage: "文章详情加载失败，当前保留本地草稿视图：{message}",
+        loadArticleFailed: "文章详情加载失败，当前保留本地草稿视图。",
+        restoreAutosaveConfirm: "从 {time} 的自动保存恢复？当前编辑内容会被覆盖。",
+        restoredAutosave: "已从自动保存恢复，请确认后手动保存。",
+        revisionsLoadFailed: "版本记录加载失败。",
+        saved: "已保存当前文章。",
+        saveFailed: "保存失败，请稍后重试。",
+        published: "文章已发布。",
+        publishFailed: "发布失败，请稍后重试。",
+        restoreRevisionConfirm: "恢复到 {time} 的版本？当前编辑内容会被覆盖。",
+        restoredRevision: "已恢复所选版本。",
+        restoreRevisionFailed: "恢复版本失败，请稍后重试。",
+        revisionReason: {
+          manual_save: "保存",
+          publish: "发布",
+          archive: "归档",
+          rollback: "版本恢复",
+        },
+        previewNeedsSlug: "保存文章并生成 slug 后可预览公开页。",
+        aiRunning: "AI 正在处理当前正文...",
+        aiNeedsContent: "请先写入正文内容，再使用 AI 操作。",
+        aiSummaryDone: "已生成摘要候选：{summary}",
+        aiTagsDone: "已加入标签：{tags}",
+        aiPolishDone: "已用润色结果替换正文。",
+        aiFormatDone: "已生成结构化排版，并写入编辑器。",
+        aiFailed: "AI 操作失败，请稍后重试。",
+        aiTranslating: "AI 正在翻译英文稿...",
+        aiNeedsChinese: "请先完成中文正文，再生成英文稿。",
+        aiTranslateDone: "已生成英文稿，请检查后再保存或发布。",
+        aiTranslateFailed: "AI 翻译失败，请稍后重试。",
+        linkUrlPrompt: "链接 URL",
+        imageUrlPrompt: "图片 URL",
+        invalidImageUrl: "请输入 http/https 图片地址，或现有的 /api/cms/media 地址。",
+        imageLinkInserted: "已插入图片链接。",
+        saveForImage: "正在先保存文章，以便图片关联到当前文章...",
+        saveForExternalImage: "正在先保存文章，以便外链图片能关联到当前文章...",
+        imageUploaded: "图片已上传并插入正文。",
+        imageUploadFailed: "图片上传失败，请稍后重试。",
+        imageUploadFallbackPrompt: "图片上传失败，可改为手动输入 URL",
+        manualImageInserted: "已改为插入手动图片 URL。",
+        imageConverting: "正在转存外链图片到媒体库...",
+        imageConverted: "已将外链图片转存到媒体库。",
+        imageConvertFailed: "外链图片转存失败，请稍后重试。",
+        autosaveFound: "发现新的自动保存",
+        autosaveFoundDetail: "保存于 {time}，可以恢复后再手动保存。",
+        restoreAutosave: "从自动保存恢复",
+        preview: "预览",
+        save: "保存",
+        saving: "保存中...",
+        publish: "发布",
+        publishing: "发布中...",
+        titlePlaceholderZh: "文章标题...",
+        titlePlaceholderEn: "English title...",
+        body: "正文",
+        codeLanguage: "代码语言",
+        tableEdit: "表格编辑",
+        addRow: "加行",
+        addColumn: "加列",
+        deleteRow: "删行",
+        deleteColumn: "删列",
+        transferToMedia: "转存到媒体库",
+        transferring: "转存中...",
+        articleIcon: "文章图标",
+        tags: "标签",
+        summaryZh: "文章简介",
+        summaryEn: "English Summary",
+        summaryPlaceholderZh: "写一段会出现在文章列表中的简介...",
+        summaryPlaceholderEn: "Write a short English summary...",
+        summaryHelpZh: "AI 生成摘要会直接填写到这里，保存后同步到首页和文章列表。",
+        summaryHelpEn: "English summary is saved alongside the Chinese article.",
+        slugTitle: "访问链接",
+        slugAria: "文章访问链接",
+        slugPlaceholder: "文章名",
+        slugHelp: "留空时会按标题自动生成 slug。",
+        outline: "目录",
+        revisions: "版本",
+        refresh: "刷新",
+        revisionNeedsSave: "首次保存后会记录版本。",
+        revisionsLoading: "正在读取版本...",
+        restore: "恢复",
+        revisionsEmpty: "暂无版本记录。",
+      },
+);
+
+function formatUiText(template: string, params: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
+}
+
+const pageTitle = computed(() => (isNewArticle.value ? editorText.value.newTitle : editorText.value.editTitle));
 const pageSubtitle = computed(() =>
-  isNewArticle.value ? "先写下草稿，保存后再继续整理细节。" : "保持轻量，随时保存，再决定何时发布。",
+  isNewArticle.value ? editorText.value.newSubtitle : editorText.value.editSubtitle,
 );
 const currentLocalizedDraft = computed(() => localizedDrafts[editorLocale.value]);
 const currentArticleId = computed(() => currentLocalizedDraft.value.articleId);
@@ -194,46 +448,46 @@ const currentPublishInfo = computed(() => currentLocalizedDraft.value.publishInf
 const currentRevisionsArticleId = computed(() => currentArticleId.value || localizedDrafts.zh.articleId);
 const localizedSummaryLength = computed(() => currentLocalizedDraft.value.summary.length);
 
-const toolbarActions = [
-  { key: "bold", icon: "ph:text-bolder", title: "加粗" },
-  { key: "italic", icon: "ph:text-italic", title: "斜体" },
-  { key: "wavyUnderline", icon: "ph:wave-sine", title: "波浪下划线" },
-  { key: "underline", icon: "ph:text-underline", title: "下划线" },
-  { key: "strike", icon: "ph:text-strikethrough", title: "删除线" },
-  { key: "quote", icon: "ph:quotes", title: "引用" },
-  { key: "inlineCode", icon: "ph:brackets-curly", title: "行内代码" },
-  { key: "code", icon: "ph:code", title: "代码块" },
-  { key: "bullet", icon: "ph:list-bullets", title: "无序列表" },
-  { key: "ordered", icon: "ph:list-numbers", title: "有序列表" },
-  { key: "link", icon: "ph:link", title: "链接" },
-  { key: "image", icon: "ph:image", title: "图片" },
-  { key: "superscript", icon: "ph:text-superscript", title: "上角标" },
-  { key: "subscript", icon: "ph:text-subscript", title: "下角标" },
-  { key: "alignLeft", icon: "ph:text-align-left", title: "左对齐" },
-  { key: "alignCenter", icon: "ph:text-align-center", title: "居中对齐" },
-  { key: "alignRight", icon: "ph:text-align-right", title: "右对齐" },
-  { key: "table", icon: "ph:table", title: "添加表格" },
-];
+const toolbarActions = computed(() => [
+  { key: "bold", icon: "ph:text-bolder", title: editorText.value.toolbar.bold },
+  { key: "italic", icon: "ph:text-italic", title: editorText.value.toolbar.italic },
+  { key: "wavyUnderline", icon: "ph:wave-sine", title: editorText.value.toolbar.wavyUnderline },
+  { key: "underline", icon: "ph:text-underline", title: editorText.value.toolbar.underline },
+  { key: "strike", icon: "ph:text-strikethrough", title: editorText.value.toolbar.strike },
+  { key: "quote", icon: "ph:quotes", title: editorText.value.toolbar.quote },
+  { key: "inlineCode", icon: "ph:brackets-curly", title: editorText.value.toolbar.inlineCode },
+  { key: "code", icon: "ph:code", title: editorText.value.toolbar.code },
+  { key: "bullet", icon: "ph:list-bullets", title: editorText.value.toolbar.bullet },
+  { key: "ordered", icon: "ph:list-numbers", title: editorText.value.toolbar.ordered },
+  { key: "link", icon: "ph:link", title: editorText.value.toolbar.link },
+  { key: "image", icon: "ph:image", title: editorText.value.toolbar.image },
+  { key: "superscript", icon: "ph:text-superscript", title: editorText.value.toolbar.superscript },
+  { key: "subscript", icon: "ph:text-subscript", title: editorText.value.toolbar.subscript },
+  { key: "alignLeft", icon: "ph:text-align-left", title: editorText.value.toolbar.alignLeft },
+  { key: "alignCenter", icon: "ph:text-align-center", title: editorText.value.toolbar.alignCenter },
+  { key: "alignRight", icon: "ph:text-align-right", title: editorText.value.toolbar.alignRight },
+  { key: "table", icon: "ph:table", title: editorText.value.toolbar.table },
+]);
 
-const toolbarColors: ToolbarColor[] = [
-  { key: "default", label: "默认文字", value: "" },
-  { key: "accent", label: "强调色", value: "var(--accent)" },
-  { key: "secondary", label: "次级文字", value: "var(--text-secondary)" },
-  { key: "warm", label: "暖色", value: "oklch(0.68 0.17 45)" },
-  { key: "green", label: "绿色", value: "oklch(0.65 0.16 150)" },
-  { key: "rose", label: "玫瑰色", value: "oklch(0.68 0.17 20)" },
-];
+const toolbarColors = computed<ToolbarColor[]>(() => [
+  { key: "default", label: editorText.value.colors.defaultText, value: "" },
+  { key: "accent", label: editorText.value.colors.accent, value: "var(--accent)" },
+  { key: "secondary", label: editorText.value.colors.secondary, value: "var(--text-secondary)" },
+  { key: "warm", label: editorText.value.colors.warm, value: "oklch(0.68 0.17 45)" },
+  { key: "green", label: editorText.value.colors.green, value: "oklch(0.65 0.16 150)" },
+  { key: "rose", label: editorText.value.colors.rose, value: "oklch(0.68 0.17 20)" },
+]);
 
-const toolbarBackgroundColors: ToolbarColor[] = [
-  { key: "default", label: "无背景", value: "" },
-  { key: "soft-accent", label: "浅强调", value: "var(--article-mark-accent)" },
-  { key: "warm", label: "浅暖色", value: "var(--article-mark-warm)" },
-  { key: "green", label: "浅绿色", value: "var(--article-mark-green)" },
-  { key: "rose", label: "浅玫瑰", value: "var(--article-mark-rose)" },
-];
+const toolbarBackgroundColors = computed<ToolbarColor[]>(() => [
+  { key: "default", label: editorText.value.colors.noBackground, value: "" },
+  { key: "soft-accent", label: editorText.value.colors.softAccent, value: "var(--article-mark-accent)" },
+  { key: "warm", label: editorText.value.colors.softWarm, value: "var(--article-mark-warm)" },
+  { key: "green", label: editorText.value.colors.softGreen, value: "var(--article-mark-green)" },
+  { key: "rose", label: editorText.value.colors.softRose, value: "var(--article-mark-rose)" },
+]);
 
-const codeLanguageOptions: ToolbarOption[] = [
-  { label: "自动/纯文本", value: "" },
+const codeLanguageOptions = computed<ToolbarOption[]>(() => [
+  { label: editorText.value.autoPlainText, value: "" },
   { label: "JavaScript", value: "javascript" },
   { label: "TypeScript", value: "typescript" },
   { label: "JSON", value: "json" },
@@ -243,7 +497,7 @@ const codeLanguageOptions: ToolbarOption[] = [
   { label: "Shell session", value: "shell" },
   { label: "Markdown", value: "markdown" },
   { label: "Plain text", value: "plaintext" },
-];
+]);
 
 const editor = useEditor({
   extensions: [
@@ -281,11 +535,11 @@ const editor = useEditor({
       autolink: true,
       defaultProtocol: "https",
     }),
-    Image.configure({
+  Image.configure({
       allowBase64: false,
     }),
     Placeholder.configure({
-      placeholder: "开始写作...",
+      placeholder: () => editorText.value.writingPlaceholder,
     }),
   ],
   content: createEmptyDoc(),
@@ -314,7 +568,7 @@ const activeToolbarKeys = computed(() => {
     return [];
   }
 
-  return toolbarActions
+  return toolbarActions.value
     .filter((action) => isToolbarActive(action.key))
     .map((action) => action.key);
 });
@@ -928,8 +1182,8 @@ async function loadArticle(id: string): Promise<void> {
   } catch (error) {
     resetWorkspace();
     loadError.value = isApiError(error)
-      ? `文章详情加载失败，当前保留本地草稿视图：${error.message}`
-      : "文章详情加载失败，当前保留本地草稿视图。";
+      ? formatUiText(editorText.value.loadArticleFailedWithMessage, { message: error.message })
+      : editorText.value.loadArticleFailed;
   } finally {
     loading.value = false;
   }
@@ -978,7 +1232,9 @@ function handleRestoreAutosave(): void {
     return;
   }
 
-  const confirmed = window.confirm(`从 ${formatShanghaiDateTime(autosave.createdAt)} 的自动保存恢复？当前编辑内容会被覆盖。`);
+  const confirmed = window.confirm(
+    formatUiText(editorText.value.restoreAutosaveConfirm, { time: formatShanghaiDateTime(autosave.createdAt) }),
+  );
   if (!confirmed) {
     return;
   }
@@ -996,7 +1252,7 @@ function handleRestoreAutosave(): void {
   });
   setEditorContent(autosave.contentJson);
   latestAutosave.value = null;
-  saveMessage.value = "已从自动保存恢复，请确认后手动保存。";
+  saveMessage.value = editorText.value.restoredAutosave;
   saveError.value = "";
 }
 
@@ -1008,6 +1264,10 @@ function switchEditorLocale(nextLocale: CmsArticleLanguage): void {
   syncDraftFromEditor();
   editorLocale.value = nextLocale;
   setEditorContent(localizedDrafts[nextLocale].contentJson);
+}
+
+function toggleEditorLocale(): void {
+  switchEditorLocale(editorLocale.value === "zh" ? "en" : "zh");
 }
 
 async function loadRevisions(id = currentRevisionsArticleId.value): Promise<void> {
@@ -1023,7 +1283,7 @@ async function loadRevisions(id = currentRevisionsArticleId.value): Promise<void
     const response = await getCmsArticleRevisions(id);
     revisions.value = response.revisions;
   } catch (error) {
-    revisionsError.value = isApiError(error) ? error.message : "版本记录加载失败。";
+    revisionsError.value = isApiError(error) ? error.message : editorText.value.revisionsLoadFailed;
   } finally {
     revisionsLoading.value = false;
   }
@@ -1040,10 +1300,10 @@ async function handleSave(): Promise<void> {
     const englishArticle = await resolveEnglishArticle(article, article);
     applyWorkspace(article, englishArticle, editorLocale.value);
     await loadRevisions(article.id);
-    saveMessage.value = "已保存当前文章。";
+    saveMessage.value = editorText.value.saved;
   } catch (error) {
     markSavingState("error");
-    saveError.value = isApiError(error) ? error.message : "保存失败，请稍后重试。";
+    saveError.value = isApiError(error) ? error.message : editorText.value.saveFailed;
   } finally {
     saving.value = false;
   }
@@ -1065,10 +1325,10 @@ async function handlePublish(): Promise<void> {
     const englishArticle = await resolveEnglishArticle(response.article, response.article);
     applyWorkspace(response.article, englishArticle, editorLocale.value);
     await loadRevisions(response.article.id);
-    saveMessage.value = "文章已发布。";
+    saveMessage.value = editorText.value.published;
   } catch (error) {
     markSavingState("error");
-    saveError.value = isApiError(error) ? error.message : "发布失败，请稍后重试。";
+    saveError.value = isApiError(error) ? error.message : editorText.value.publishFailed;
   } finally {
     publishing.value = false;
   }
@@ -1079,7 +1339,9 @@ async function handleRestoreRevision(revision: CmsArticleRevision): Promise<void
     return;
   }
 
-  const confirmed = window.confirm(`恢复到 ${formatShanghaiDateTime(revision.createdAt)} 的版本？当前编辑内容会被覆盖。`);
+  const confirmed = window.confirm(
+    formatUiText(editorText.value.restoreRevisionConfirm, { time: formatShanghaiDateTime(revision.createdAt) }),
+  );
   if (!confirmed) {
     return;
   }
@@ -1099,10 +1361,10 @@ async function handleRestoreRevision(revision: CmsArticleRevision): Promise<void
       applyWorkspace(response.article, englishArticle, editorLocale.value);
     }
     await loadRevisions(response.article.id);
-    saveMessage.value = "已恢复所选版本。";
+    saveMessage.value = editorText.value.restoredRevision;
   } catch (error) {
     markSavingState("error");
-    saveError.value = isApiError(error) ? error.message : "恢复版本失败，请稍后重试。";
+    saveError.value = isApiError(error) ? error.message : editorText.value.restoreRevisionFailed;
   } finally {
     saving.value = false;
   }
@@ -1110,10 +1372,10 @@ async function handleRestoreRevision(revision: CmsArticleRevision): Promise<void
 
 function formatRevisionReason(reason: string): string {
   const labels: Record<string, string> = {
-    manual_save: "保存",
-    publish: "发布",
-    archive: "归档",
-    rollback: "版本恢复",
+    manual_save: editorText.value.revisionReason.manual_save,
+    publish: editorText.value.revisionReason.publish,
+    archive: editorText.value.revisionReason.archive,
+    rollback: editorText.value.revisionReason.rollback,
   };
 
   return labels[reason] ?? reason;
@@ -1130,7 +1392,7 @@ function handlePreview(): void {
   const slug = currentLocalizedDraft.value.slug?.trim() ?? "";
 
   if (!slug) {
-    saveMessage.value = "保存文章并生成 slug 后可预览公开页。";
+    saveMessage.value = editorText.value.previewNeedsSlug;
     return;
   }
 
@@ -1139,14 +1401,19 @@ function handlePreview(): void {
 }
 
 async function runAiAction(key: CmsAiActionKey): Promise<void> {
+  if (key === "translate") {
+    await handleTranslateToEnglish();
+    return;
+  }
+
   syncDraftFromEditor();
   activeAiKey.value = key;
-  aiMessage.value = "AI 正在处理当前正文...";
+  aiMessage.value = editorText.value.aiRunning;
   aiError.value = "";
 
   if (!currentLocalizedDraft.value.content.trim()) {
     aiMessage.value = "";
-    aiError.value = "请先写入正文内容，再使用 AI 操作。";
+    aiError.value = editorText.value.aiNeedsContent;
     activeAiKey.value = null;
     return;
   }
@@ -1161,29 +1428,31 @@ async function runAiAction(key: CmsAiActionKey): Promise<void> {
     if (key === "summary") {
       const result = await generateSummary(input);
       currentLocalizedDraft.value.summary = result.summary;
-      aiMessage.value = `已生成摘要候选：${result.summary}`;
+      aiMessage.value = formatUiText(editorText.value.aiSummaryDone, { summary: result.summary });
       return;
     }
 
     if (key === "tags") {
       const result = await generateTags(input);
       result.tags.forEach(addTag);
-      aiMessage.value = `已加入标签：${result.tags.join("、")}`;
+      aiMessage.value = formatUiText(editorText.value.aiTagsDone, {
+        tags: result.tags.join(locale.value === "en" ? ", " : "、"),
+      });
       return;
     }
 
     if (key === "polish") {
       const result = await polishText(input);
       setEditorContent(contentTextToDoc(result.text));
-      aiMessage.value = "已用润色结果替换正文。";
+      aiMessage.value = editorText.value.aiPolishDone;
       return;
     }
 
     const result = await formatContent(input);
     setEditorContent(result.contentJson);
-    aiMessage.value = "已生成结构化排版，并写入编辑器。";
+    aiMessage.value = editorText.value.aiFormatDone;
   } catch (error) {
-    aiError.value = isApiError(error) ? error.message : "AI 操作失败，请稍后重试。";
+    aiError.value = isApiError(error) ? error.message : editorText.value.aiFailed;
   } finally {
     activeAiKey.value = null;
   }
@@ -1191,13 +1460,13 @@ async function runAiAction(key: CmsAiActionKey): Promise<void> {
 
 async function handleTranslateToEnglish(): Promise<void> {
   syncDraftFromEditor();
-  activeAiKey.value = "format";
-  aiMessage.value = "AI 正在翻译英文稿...";
+  activeAiKey.value = "translate";
+  aiMessage.value = editorText.value.aiTranslating;
   aiError.value = "";
 
   if (!localizedDrafts.zh.content.trim()) {
     aiMessage.value = "";
-    aiError.value = "请先完成中文正文，再生成英文稿。";
+    aiError.value = editorText.value.aiNeedsChinese;
     activeAiKey.value = null;
     return;
   }
@@ -1225,9 +1494,9 @@ async function handleTranslateToEnglish(): Promise<void> {
       setEditorContent(result.contentJson);
     }
 
-    aiMessage.value = "已生成英文稿，请检查后再保存或发布。";
+    aiMessage.value = editorText.value.aiTranslateDone;
   } catch (error) {
-    aiError.value = isApiError(error) ? error.message : "AI 翻译失败，请稍后重试。";
+    aiError.value = isApiError(error) ? error.message : editorText.value.aiTranslateFailed;
   } finally {
     activeAiKey.value = null;
   }
@@ -1262,7 +1531,7 @@ function toggleLink(): void {
   }
 
   const previousUrl = currentEditor.getAttributes("link").href as string | undefined;
-  const url = window.prompt("链接 URL", previousUrl ?? "");
+  const url = window.prompt(editorText.value.linkUrlPrompt, previousUrl ?? "");
 
   if (url === null) {
     return;
@@ -1291,7 +1560,7 @@ function promptImageLink(): void {
     return;
   }
 
-  const url = window.prompt("图片 URL", "");
+  const url = window.prompt(editorText.value.imageUrlPrompt, "");
 
   if (url === null) {
     return;
@@ -1301,7 +1570,7 @@ function promptImageLink(): void {
 
   if (!normalizedUrl) {
     saveMessage.value = "";
-    saveError.value = "请输入 http/https 图片地址，或现有的 /api/cms/media 地址。";
+    saveError.value = editorText.value.invalidImageUrl;
     return;
   }
 
@@ -1309,7 +1578,7 @@ function promptImageLink(): void {
   syncDraftFromEditor(currentEditor);
   scheduleAutosave();
   saveError.value = "";
-  saveMessage.value = "已插入图片链接。";
+  saveMessage.value = editorText.value.imageLinkInserted;
 }
 
 async function handleImageInputChange(event: Event): Promise<void> {
@@ -1337,7 +1606,7 @@ async function uploadAndInsertImage(file: File): Promise<void> {
 
   try {
     if (!currentArticleId.value) {
-      await ensureDraftExistsForImageOperation("正在先保存文章，以便图片关联到当前文章...");
+      await ensureDraftExistsForImageOperation(editorText.value.saveForImage);
     }
 
     const uploaded = await uploadCmsImage(file, {
@@ -1350,16 +1619,16 @@ async function uploadAndInsertImage(file: File): Promise<void> {
     }).run();
     syncDraftFromEditor(currentEditor);
     scheduleAutosave();
-    saveMessage.value = "图片已上传并插入正文。";
+    saveMessage.value = editorText.value.imageUploaded;
   } catch (error) {
-    const message = isApiError(error) ? error.message : "图片上传失败，请稍后重试。";
-    const fallbackSrc = window.prompt("图片上传失败，可改为手动输入 URL", "");
+    const message = isApiError(error) ? error.message : editorText.value.imageUploadFailed;
+    const fallbackSrc = window.prompt(editorText.value.imageUploadFallbackPrompt, "");
 
     if (fallbackSrc?.trim()) {
       currentEditor.chain().focus().setImage({ src: fallbackSrc.trim(), alt: file.name }).run();
       syncDraftFromEditor(currentEditor);
       scheduleAutosave();
-      saveMessage.value = "已改为插入手动图片 URL。";
+      saveMessage.value = editorText.value.manualImageInserted;
       saveError.value = "";
     } else {
       saveError.value = message;
@@ -1386,10 +1655,10 @@ async function convertExternalImage(target: ImageNodeContext | null = hoveredIma
 
   try {
     if (!currentArticleId.value) {
-      await ensureDraftExistsForImageOperation("正在先保存文章，以便外链图片能关联到当前文章...");
+      await ensureDraftExistsForImageOperation(editorText.value.saveForExternalImage);
     }
 
-    saveMessage.value = "正在转存外链图片到媒体库...";
+    saveMessage.value = editorText.value.imageConverting;
     const uploaded = await uploadCmsImageFromUrl(target.src, {
       articleId: currentArticleId.value || undefined,
     });
@@ -1402,10 +1671,10 @@ async function convertExternalImage(target: ImageNodeContext | null = hoveredIma
     syncDraftFromEditor(currentEditor);
     scheduleAutosave();
     saveError.value = "";
-    saveMessage.value = "已将外链图片转存到媒体库。";
+    saveMessage.value = editorText.value.imageConverted;
   } catch (error) {
     saveMessage.value = "";
-    saveError.value = isApiError(error) ? error.message : "外链图片转存失败，请稍后重试。";
+    saveError.value = isApiError(error) ? error.message : editorText.value.imageConvertFailed;
   } finally {
     imageConverting.value = false;
   }
@@ -1599,16 +1868,22 @@ watch(
     <p v-else-if="saveMessage" class="status-line">
       {{ saveMessage }}
     </p>
-        <p v-if="saveError" class="status-line error">
+    <p v-if="saveError" class="status-line error">
       {{ saveError }}
     </p>
     <section v-if="latestAutosave" class="autosave-restore">
       <div>
-        <strong>发现新的自动保存</strong>
-        <p>保存于 {{ formatShanghaiDateTime(latestAutosave.createdAt) }}，可以恢复后再手动保存。</p>
+        <strong>{{ editorText.autosaveFound }}</strong>
+        <p>
+          {{
+            formatUiText(editorText.autosaveFoundDetail, {
+              time: formatShanghaiDateTime(latestAutosave.createdAt),
+            })
+          }}
+        </p>
       </div>
       <button type="button" class="text-action" :disabled="saving || publishing" @click="handleRestoreAutosave">
-        从自动保存恢复
+        {{ editorText.restoreAutosave }}
       </button>
     </section>
 
@@ -1617,29 +1892,12 @@ watch(
         <input ref="imageUploadInput" class="hidden-file-input" type="file" accept="image/*" @change="handleImageInputChange" />
         <div class="editor-actions-sticky" :style="stickyHeaderStyle">
           <div class="header-actions">
-            <div class="language-switch segmented-inline">
-              <button
-                type="button"
-                class="segment-inline"
-                :class="{ active: editorLocale === 'zh' }"
-                :aria-pressed="editorLocale === 'zh'"
-                @click="switchEditorLocale('zh')"
-              >
-                中文
-              </button>
-              <button
-                type="button"
-                class="segment-inline"
-                :class="{ active: editorLocale === 'en' }"
-                :aria-pressed="editorLocale === 'en'"
-                @click="switchEditorLocale('en')"
-              >
-                English
-              </button>
-            </div>
-            <button type="button" class="text-action" @click="handlePreview">预览</button>
+            <button type="button" class="text-action editor-locale-action" @click="toggleEditorLocale">
+              {{ editorLocale === "zh" ? "English" : "中文" }}
+            </button>
+            <button type="button" class="text-action" @click="handlePreview">{{ editorText.preview }}</button>
             <button type="button" class="text-action" :disabled="loading || saving || publishing" @click="handleSave">
-              {{ saving ? "保存中..." : "保存" }}
+              {{ saving ? editorText.saving : editorText.save }}
             </button>
             <button
               type="button"
@@ -1647,15 +1905,7 @@ watch(
               :disabled="loading || saving || publishing"
               @click="handlePublish"
             >
-              {{ publishing ? "发布中..." : "发布" }}
-            </button>
-            <button
-              type="button"
-              class="text-action"
-              :disabled="loading || saving || publishing || activeAiKey !== null"
-              @click="handleTranslateToEnglish"
-            >
-              AI 翻译
+              {{ publishing ? editorText.publishing : editorText.publish }}
             </button>
           </div>
         </div>
@@ -1663,7 +1913,7 @@ watch(
           v-model="currentLocalizedDraft.title"
           type="text"
           class="title-input"
-          :placeholder="editorLocale === 'zh' ? '文章标题...' : 'English title...'"
+          :placeholder="editorLocale === 'zh' ? editorText.titlePlaceholderZh : editorText.titlePlaceholderEn"
         />
         <div class="editor-toolbar-sticky" :style="stickyHeaderStyle">
           <EditorToolbar
@@ -1688,7 +1938,7 @@ watch(
           @mousemove="handleEditorMouseMove"
           @mouseleave="clearHoveredExternalImage"
         >
-          <p class="hint">正文</p>
+          <p class="hint">{{ editorText.body }}</p>
           <BubbleMenu
             v-if="editor"
             :editor="editor"
@@ -1696,11 +1946,11 @@ watch(
             :should-show="() => showCodeBlockMenu"
             :options="{ placement: 'top-start', offset: 8 }"
           >
-            <label class="context-menu context-menu-select" title="代码语言">
-              <span>代码语言</span>
+            <label class="context-menu context-menu-select" :title="editorText.codeLanguage">
+              <span>{{ editorText.codeLanguage }}</span>
               <select
                 :value="activeCodeLanguage"
-                aria-label="代码语言"
+                :aria-label="editorText.codeLanguage"
                 @change="setCodeLanguage(($event.target as HTMLSelectElement).value)"
               >
                 <option v-for="language in codeLanguageOptions" :key="language.value || 'auto'" :value="language.value">
@@ -1716,11 +1966,11 @@ watch(
             :should-show="() => showTableMenu"
             :options="{ placement: 'top-start', offset: 8 }"
           >
-            <div class="context-menu table-context-menu" aria-label="表格编辑">
-              <button type="button" title="增加表格行" @click="runTableAction('addRow')">加行</button>
-              <button type="button" title="增加表格列" @click="runTableAction('addColumn')">加列</button>
-              <button type="button" title="删除当前表格行" @click="runTableAction('deleteRow')">删行</button>
-              <button type="button" title="删除当前表格列" @click="runTableAction('deleteColumn')">删列</button>
+            <div class="context-menu table-context-menu" :aria-label="editorText.tableEdit">
+              <button type="button" :title="editorText.addRow" @click="runTableAction('addRow')">{{ editorText.addRow }}</button>
+              <button type="button" :title="editorText.addColumn" @click="runTableAction('addColumn')">{{ editorText.addColumn }}</button>
+              <button type="button" :title="editorText.deleteRow" @click="runTableAction('deleteRow')">{{ editorText.deleteRow }}</button>
+              <button type="button" :title="editorText.deleteColumn" @click="runTableAction('deleteColumn')">{{ editorText.deleteColumn }}</button>
             </div>
           </BubbleMenu>
           <div v-if="hoveredImage" class="image-convert-float" :style="hoverConvertButtonStyle">
@@ -1732,7 +1982,7 @@ watch(
               :disabled="imageOperationPending"
               @click="convertExternalImage(hoveredImage)"
             >
-              {{ imageConverting ? "转存中..." : "转存到媒体库" }}
+              {{ imageConverting ? editorText.transferring : editorText.transferToMedia }}
             </button>
           </div>
           <EditorContent v-if="editor" :editor="editor" class="editor-content" :class="{ disabled: loading }" />
@@ -1743,16 +1993,16 @@ watch(
 
       <aside class="sidebar">
         <section class="panel">
-          <h3>文章图标</h3>
+          <h3>{{ editorText.articleIcon }}</h3>
           <IconPicker v-model="draft.iconName" />
         </section>
         <section class="panel">
-          <h3>标签</h3>
+          <h3>{{ editorText.tags }}</h3>
           <TagEditor :tags="draft.tags" @add="addTag" @remove="removeTag" />
         </section>
         <section class="panel">
           <div class="panel-heading">
-            <h3>{{ editorLocale === "zh" ? "文章简介" : "English Summary" }}</h3>
+            <h3>{{ editorLocale === "zh" ? editorText.summaryZh : editorText.summaryEn }}</h3>
             <span>{{ localizedSummaryLength }}/240</span>
           </div>
           <textarea
@@ -1760,26 +2010,26 @@ watch(
             class="summary-input"
             maxlength="240"
             rows="5"
-            :placeholder="editorLocale === 'zh' ? '写一段会出现在文章列表中的简介...' : 'Write a short English summary...'"
+            :placeholder="editorLocale === 'zh' ? editorText.summaryPlaceholderZh : editorText.summaryPlaceholderEn"
           ></textarea>
           <p class="panel-help">
-            {{ editorLocale === "zh" ? "AI 生成摘要会直接填写到这里，保存后同步到首页和文章列表。" : "English summary is saved alongside the Chinese article." }}
+            {{ editorLocale === "zh" ? editorText.summaryHelpZh : editorText.summaryHelpEn }}
           </p>
         </section>
         <section class="panel">
-          <h3>访问链接</h3>
+          <h3>{{ editorText.slugTitle }}</h3>
           <p class="panel-help slug-prefix">https://blog.yamds.cafe/articles/</p>
-          <label class="slug-input" aria-label="文章访问链接">
+          <label class="slug-input" :aria-label="editorText.slugAria">
             <input
               v-model="currentSlug"
               type="text"
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              placeholder="文章名"
+              :placeholder="editorText.slugPlaceholder"
             />
           </label>
-          <p class="panel-help">留空时会按标题自动生成 slug。</p>
+          <p class="panel-help">{{ editorText.slugHelp }}</p>
         </section>
         <section class="panel">
           <PublishPanel
@@ -1792,7 +2042,7 @@ watch(
           />
         </section>
         <section v-if="editorOutlineItems.length" class="panel editor-outline-panel">
-          <h3>目录</h3>
+          <h3>{{ editorText.outline }}</h3>
           <ul class="editor-outline-list">
             <li
               v-for="item in editorOutlineItems"
@@ -1813,13 +2063,13 @@ watch(
         </section>
         <section class="panel revisions-panel">
           <div class="panel-heading">
-            <h3>版本</h3>
+            <h3>{{ editorText.revisions }}</h3>
             <button type="button" class="panel-link" :disabled="!currentRevisionsArticleId || revisionsLoading" @click="loadRevisions()">
-              刷新
+              {{ editorText.refresh }}
             </button>
           </div>
-          <p v-if="!currentRevisionsArticleId" class="panel-help">首次保存后会记录版本。</p>
-          <p v-else-if="revisionsLoading" class="panel-help">正在读取版本...</p>
+          <p v-if="!currentRevisionsArticleId" class="panel-help">{{ editorText.revisionNeedsSave }}</p>
+          <p v-else-if="revisionsLoading" class="panel-help">{{ editorText.revisionsLoading }}</p>
           <p v-else-if="revisionsError" class="panel-help error">{{ revisionsError }}</p>
           <ul v-else-if="revisions.length" class="revision-list">
             <li v-for="revision in revisions.slice(0, 6)" :key="revision.id" class="revision-item">
@@ -1827,14 +2077,14 @@ watch(
                 <strong>{{ formatRevisionTitle(revision) }}</strong>
               </div>
               <button type="button" class="panel-link" :disabled="saving || publishing" @click="handleRestoreRevision(revision)">
-                恢复
+                {{ editorText.restore }}
               </button>
             </li>
           </ul>
-          <p v-else class="panel-help">暂无版本记录。</p>
+          <p v-else class="panel-help">{{ editorText.revisionsEmpty }}</p>
         </section>
         <section class="panel">
-          <AiPanel :actions="cmsAiActions" :active-key="activeAiKey === 'translate' ? null : activeAiKey" @run="runAiAction" />
+          <AiPanel :actions="cmsAiActions" :active-key="activeAiKey" @run="runAiAction" />
           <p v-if="aiMessage" class="side-note">{{ aiMessage }}</p>
           <p v-if="aiError" class="side-error">{{ aiError }}</p>
         </section>
@@ -1896,28 +2146,6 @@ watch(
   padding: 0 0 var(--space-3);
 }
 .header-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap; }
-.segmented-inline {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--bg-elevated) 80%, transparent);
-}
-.segment-inline {
-  min-width: 68px;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: calc(var(--radius-md) - 4px);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.segment-inline.active {
-  background: var(--bg);
-  color: var(--text-primary);
-}
 .text-action {
   position: relative;
   border: 0;
@@ -1957,6 +2185,11 @@ watch(
 
 .text-action:focus-visible {
   outline: none;
+}
+
+.editor-locale-action {
+  min-width: 54px;
+  text-align: center;
 }
 .text-action:disabled { cursor: not-allowed; opacity: 0.5; }
 .publish-action { color: var(--accent); }
