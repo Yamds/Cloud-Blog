@@ -4,6 +4,7 @@ import { RouterLink } from "vue-router";
 import { archiveCmsArticle, deleteCmsArticle, getCmsArticles } from "@/api/cms";
 import { getCmsAnalyticsSummary } from "@/api/analytics";
 import { isApiError } from "@/api/http";
+import { useI18n } from "@/i18n/useI18n";
 import ArticlesTable from "@/components/cms/ArticlesTable.vue";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import StatCard from "@/components/cms/StatCard.vue";
@@ -18,6 +19,7 @@ const archiveBusyId = ref<string | null>(null);
 const deleteBusyId = ref<string | null>(null);
 const fallbackNotice = ref("");
 const actionNotice = ref("");
+const { t } = useI18n();
 
 const archiveDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));
 const deleteDisabled = computed(() => loading.value || Boolean(archiveBusyId.value) || Boolean(deleteBusyId.value));
@@ -29,7 +31,7 @@ function mapArticleRow(article: CmsArticleDetail): CmsArticleRow {
   return {
     id: article.id,
     iconName: article.iconName || "ph:article",
-    title: article.title || "未命名文章",
+    title: article.title || t("cms.dashboard.articleUntitled"),
     date: formatShanghaiDate(article.updatedAt || article.createdAt || article.publishedAt),
     status: article.status,
   };
@@ -39,33 +41,33 @@ function mapStats(source: CmsArticleStats | null, summary: CmsAnalyticsSummary |
   return [
     {
       key: "articles",
-      label: "总文章数",
+      label: t("cms.dashboard.stats.articlesLabel"),
       icon: "ph:article",
       value: source ? formatCount(source.total) : "0",
-      change: source ? `已发布 ${formatCount(source.published)}` : "等待同步",
+      change: source ? t("cms.dashboard.stats.articlesChange", { count: formatCount(source.published) }) : t("cms.dashboard.syncPending"),
       positive: source ? source.published > 0 : false,
     },
     {
       key: "views",
-      label: "总浏览量",
+      label: t("cms.dashboard.stats.viewsLabel"),
       icon: "ph:eye",
       value: summary ? formatCount(summary.totalViews) : "0",
-      change: summary ? `今日 ${formatCount(summary.todayViews)}` : "等待同步",
+      change: summary ? t("cms.dashboard.stats.viewsChange", { count: formatCount(summary.todayViews) }) : t("cms.dashboard.syncPending"),
       positive: summary ? summary.todayViews > 0 : false,
     },
     {
       key: "drafts",
-      label: "草稿",
+      label: t("cms.dashboard.stats.draftsLabel"),
       icon: "ph:file-dashed",
       value: source ? formatCount(source.draft) : "0",
-      change: source ? `归档 ${formatCount(source.archived)}` : "等待同步",
+      change: source ? t("cms.dashboard.stats.draftsChange", { count: formatCount(source.archived) }) : t("cms.dashboard.syncPending"),
     },
     {
       key: "tags",
-      label: "标签数",
+      label: t("cms.dashboard.stats.tagsLabel"),
       icon: "ph:tag",
       value: source ? formatCount(source.tags) : "0",
-      change: summary ? `近 7 日 ${formatCount(summary.last7DaysViews)}` : "等待同步",
+      change: summary ? t("cms.dashboard.stats.tagsChange", { count: formatCount(summary.last7DaysViews) }) : t("cms.dashboard.syncPending"),
       positive: summary ? summary.last7DaysViews > 0 : false,
     },
   ];
@@ -92,8 +94,8 @@ async function loadDashboard(): Promise<void> {
     articles.value = [];
     notices.push(
       isApiError(articlesResult.reason)
-        ? `文章接口暂时不可用：${articlesResult.reason.message}`
-        : "文章接口暂时不可用。",
+        ? t("cms.dashboard.noticeArticlesUnavailable", { message: articlesResult.reason.message })
+        : t("cms.dashboard.noticeArticlesUnavailablePlain"),
     );
   }
 
@@ -102,8 +104,8 @@ async function loadDashboard(): Promise<void> {
   } else {
     notices.push(
       isApiError(analyticsResult.reason)
-        ? `访问分析接口暂时不可用：${analyticsResult.reason.message}`
-        : "访问分析接口暂时不可用。",
+        ? t("cms.dashboard.noticeAnalyticsUnavailable", { message: analyticsResult.reason.message })
+        : t("cms.dashboard.noticeAnalyticsUnavailablePlain"),
     );
   }
 
@@ -122,16 +124,16 @@ async function handleArchive(id: string): Promise<void> {
   try {
     await archiveCmsArticle(id);
     await loadDashboard();
-    actionNotice.value = "文章已归档。";
+    actionNotice.value = t("cms.dashboard.actionArchived");
   } catch (error) {
-    actionNotice.value = isApiError(error) ? error.message : "归档失败，请稍后重试。";
+    actionNotice.value = isApiError(error) ? error.message : t("cms.dashboard.actionArchiveFailed");
   } finally {
     archiveBusyId.value = null;
   }
 }
 
 async function handleDelete(article: CmsArticleRow): Promise<void> {
-  const confirmed = window.confirm(`确认删除《${article.title}》吗？此操作会移除文章及相关草稿、版本和评论。`);
+  const confirmed = window.confirm(t("cms.dashboard.actionDeleteConfirm", { title: article.title }));
 
   if (!confirmed) {
     return;
@@ -143,9 +145,9 @@ async function handleDelete(article: CmsArticleRow): Promise<void> {
   try {
     await deleteCmsArticle(article.id);
     await loadDashboard();
-    actionNotice.value = "文章已删除。";
+    actionNotice.value = t("cms.dashboard.actionDeleted");
   } catch (error) {
-    actionNotice.value = isApiError(error) ? error.message : "删除失败，请稍后重试。";
+    actionNotice.value = isApiError(error) ? error.message : t("cms.dashboard.actionDeleteFailed");
   } finally {
     deleteBusyId.value = null;
   }
@@ -156,7 +158,7 @@ onMounted(() => {
 });
 
 function formatCount(value: number): string {
-  return new Intl.NumberFormat("zh-CN").format(value);
+  return new Intl.NumberFormat(undefined).format(value);
 }
 
 function createEmptyStats(): CmsStatItem[] {
@@ -170,8 +172,8 @@ function formatAnalyticsDayLabel(value: string): string {
 </script>
 
 <template>
-  <CmsShell title="概览" subtitle="欢迎回来，这里是你的博客统计与最近更新。">
-    <div v-if="loading" class="loading-overlay" aria-live="polite" aria-label="正在加载 CMS 数据">
+  <CmsShell :title="t('cms.dashboard.title')" :subtitle="t('cms.dashboard.subtitle')">
+    <div v-if="loading" class="loading-overlay" aria-live="polite" :aria-label="t('cms.dashboard.loadingLabel')">
       <span class="loading-spinner" aria-hidden="true" />
     </div>
 
@@ -189,16 +191,16 @@ function formatAnalyticsDayLabel(value: string): string {
     <section v-if="!loading && analyticsSummary" class="analytics-section">
       <div class="section-header">
         <div>
-          <h2>访问分析</h2>
-          <p class="section-note">最近 7 天累计 {{ formatCount(analyticsSummary.last7DaysViews) }} 次浏览</p>
+          <h2>{{ t("cms.dashboard.analyticsTitle") }}</h2>
+          <p class="section-note">{{ t("cms.dashboard.analyticsSummary", { count: formatCount(analyticsSummary.last7DaysViews) }) }}</p>
         </div>
       </div>
 
       <div class="analytics-grid">
         <div class="analytics-panel">
           <div class="analytics-panel-header">
-            <h3>最近 7 天</h3>
-            <span>按天聚合</span>
+            <h3>{{ t("cms.dashboard.analyticsTrendTitle") }}</h3>
+            <span>{{ t("cms.dashboard.analyticsTrendMeta") }}</span>
           </div>
           <ol class="trend-list">
             <li v-for="point in analyticsSummary.dailyViews" :key="point.date" class="trend-item">
@@ -216,8 +218,8 @@ function formatAnalyticsDayLabel(value: string): string {
 
         <div class="analytics-panel">
           <div class="analytics-panel-header">
-            <h3>热门文章</h3>
-            <span>近 7 日</span>
+            <h3>{{ t("cms.dashboard.analyticsPopularTitle") }}</h3>
+            <span>{{ t("cms.dashboard.analyticsPopularMeta") }}</span>
           </div>
           <ol v-if="analyticsSummary.popularArticles.length" class="popular-list">
             <li
@@ -234,7 +236,7 @@ function formatAnalyticsDayLabel(value: string): string {
               <strong class="popular-value">{{ formatCount(article.views) }}</strong>
             </li>
           </ol>
-          <p v-else class="empty-note">近 7 日还没有文章浏览数据。</p>
+          <p v-else class="empty-note">{{ t("cms.dashboard.analyticsPopularEmpty") }}</p>
         </div>
       </div>
     </section>
@@ -242,15 +244,15 @@ function formatAnalyticsDayLabel(value: string): string {
     <section v-if="!loading" class="recent-section">
       <div class="section-header">
         <div>
-          <h2>最近文章</h2>
-          <p v-if="articles.length === 0" class="section-note">暂无文章数据。</p>
+          <h2>{{ t("cms.dashboard.recentTitle") }}</h2>
+          <p v-if="articles.length === 0" class="section-note">{{ t("cms.dashboard.recentEmpty") }}</p>
         </div>
         <div class="section-actions">
-          <RouterLink class="secondary-action" to="/cms/comments">评论管理</RouterLink>
-          <RouterLink class="secondary-action" to="/cms/analytics">访问分析</RouterLink>
-          <RouterLink class="secondary-action" to="/cms/settings">站点设置</RouterLink>
-          <RouterLink class="secondary-action" to="/cms/storage">对象存储</RouterLink>
-          <RouterLink class="primary-action" to="/cms/articles/new">新建文章</RouterLink>
+          <RouterLink class="secondary-action" to="/cms/comments">{{ t("cms.dashboard.linkComments") }}</RouterLink>
+          <RouterLink class="secondary-action" to="/cms/analytics">{{ t("cms.dashboard.linkAnalytics") }}</RouterLink>
+          <RouterLink class="secondary-action" to="/cms/settings">{{ t("cms.dashboard.linkSettings") }}</RouterLink>
+          <RouterLink class="secondary-action" to="/cms/storage">{{ t("cms.dashboard.linkStorage") }}</RouterLink>
+          <RouterLink class="primary-action" to="/cms/articles/new">{{ t("cms.dashboard.linkNewArticle") }}</RouterLink>
         </div>
       </div>
       <ArticlesTable

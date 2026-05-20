@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import type { MessageKey } from "@/i18n/messages";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
 import type {
   CmsStorageFilters,
@@ -20,35 +22,37 @@ const emit = defineEmits<{
   "update:modelValue": [value: CmsStorageFilters];
 }>();
 
-const typeOptions: Array<{ value: CmsStorageObjectType | "all"; label: string }> = [
-  { value: "all", label: "全部类型" },
-  { value: "image", label: "图片" },
-  { value: "attachment", label: "附件" },
+const { t } = useI18n();
+
+const typeOptions: Array<{ value: CmsStorageObjectType | "all"; label: MessageKey }> = [
+  { value: "all", label: "cms.storage.filters.typeAll" },
+  { value: "image", label: "cms.storage.filters.typeImage" },
+  { value: "attachment", label: "cms.storage.filters.typeAttachment" },
 ];
 
-const statusOptions: Array<{ value: CmsStorageObjectStatus | "all"; label: string }> = [
-  { value: "all", label: "全部状态" },
-  { value: "ready", label: "可用" },
-  { value: "processing", label: "处理中" },
-  { value: "orphaned", label: "待整理" },
-  { value: "error", label: "异常" },
+const statusOptions: Array<{ value: CmsStorageObjectStatus | "all"; label: MessageKey }> = [
+  { value: "all", label: "cms.storage.filters.statusAll" },
+  { value: "ready", label: "cms.storage.filters.statusReady" },
+  { value: "processing", label: "cms.storage.filters.statusProcessing" },
+  { value: "orphaned", label: "cms.storage.filters.statusOrphaned" },
+  { value: "error", label: "cms.storage.filters.statusError" },
 ];
 
-const relationOptions: Array<{ value: CmsStorageRelationFilter; label: string }> = [
-  { value: "all", label: "全部关联" },
-  { value: "linked", label: "已关联文章" },
-  { value: "unlinked", label: "未关联" },
+const relationOptions: Array<{ value: CmsStorageRelationFilter; label: MessageKey }> = [
+  { value: "all", label: "cms.storage.filters.relationAll" },
+  { value: "linked", label: "cms.storage.filters.relationLinked" },
+  { value: "unlinked", label: "cms.storage.filters.relationUnlinked" },
 ];
 
-const sortOptions: Array<{ value: CmsStorageSortKey; label: string }> = [
-  { value: "updatedAt", label: "按更新时间" },
-  { value: "sizeBytes", label: "按大小" },
-  { value: "key", label: "按文件名" },
+const sortOptions: Array<{ value: CmsStorageSortKey; label: MessageKey }> = [
+  { value: "updatedAt", label: "cms.storage.filters.sortUpdatedAt" },
+  { value: "sizeBytes", label: "cms.storage.filters.sortSizeBytes" },
+  { value: "key", label: "cms.storage.filters.sortKey" },
 ];
 
-const viewOptions: Array<{ value: CmsStorageViewMode; icon: string; label: string }> = [
-  { value: "table", icon: "ph:rows", label: "表格视图" },
-  { value: "grid", icon: "ph:squares-four", label: "网格视图" },
+const viewOptions: Array<{ value: CmsStorageViewMode; icon: string; label: MessageKey }> = [
+  { value: "table", icon: "ph:rows", label: "cms.storage.filters.viewTable" },
+  { value: "grid", icon: "ph:squares-four", label: "cms.storage.filters.viewGrid" },
 ];
 
 const hasActiveFilters = computed(
@@ -103,67 +107,67 @@ function resetFilters(): void {
   <section class="filters-card">
     <div class="header">
       <div>
-        <h2>对象筛选</h2>
-        <p>{{ visibleCount }} / {{ totalCount }} 个对象正在显示</p>
+        <h2>{{ t("cms.storage.filters.title") }}</h2>
+        <p>{{ t("cms.storage.filters.summary", { visible: visibleCount, total: totalCount }) }}</p>
       </div>
-      <div class="view-toggle" aria-label="切换对象视图">
+      <div class="view-toggle" :aria-label="t('cms.storage.filters.viewToggle')">
         <button
           v-for="option in viewOptions"
           :key="option.value"
           type="button"
           class="view-btn"
           :class="{ active: modelValue.viewMode === option.value }"
-          :title="option.label"
+          :title="t(option.label)"
           @click="updateModel('viewMode', option.value)"
         >
-          <IconifyIcon :icon="option.icon" :size="18" :aria-label="option.label" />
+          <IconifyIcon :icon="option.icon" :size="18" :aria-label="t(option.label)" />
         </button>
       </div>
     </div>
 
     <div class="controls">
       <label class="field field-search">
-        <span>搜索</span>
+        <span>{{ t("cms.storage.filters.search") }}</span>
         <input
           :value="modelValue.query"
           type="search"
-          placeholder="按文件名、类型或关联文章搜索"
+          :placeholder="t('cms.storage.filters.searchPlaceholder')"
           @input="onQueryInput"
         />
       </label>
 
       <label class="field">
-        <span>类型</span>
+        <span>{{ t("cms.storage.filters.type") }}</span>
         <select :value="modelValue.type" @change="onTypeChange">
           <option v-for="option in typeOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+            {{ t(option.label) }}
           </option>
         </select>
       </label>
 
       <label class="field">
-        <span>状态</span>
+        <span>{{ t("cms.storage.filters.status") }}</span>
         <select :value="modelValue.status" @change="onStatusChange">
           <option v-for="option in statusOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+            {{ t(option.label) }}
           </option>
         </select>
       </label>
 
       <label class="field">
-        <span>关联</span>
+        <span>{{ t("cms.storage.filters.relation") }}</span>
         <select :value="modelValue.relation" @change="onRelationChange">
           <option v-for="option in relationOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+            {{ t(option.label) }}
           </option>
         </select>
       </label>
 
       <label class="field">
-        <span>排序</span>
+        <span>{{ t("cms.storage.filters.sort") }}</span>
         <select :value="modelValue.sortBy" @change="onSortChange">
           <option v-for="option in sortOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
+            {{ t(option.label) }}
           </option>
         </select>
       </label>
@@ -171,7 +175,7 @@ function resetFilters(): void {
 
     <button v-if="hasActiveFilters" type="button" class="reset-btn" @click="resetFilters">
       <IconifyIcon icon="ph:x" :size="16" />
-      清空筛选
+      {{ t("cms.storage.filters.reset") }}
     </button>
   </section>
 </template>

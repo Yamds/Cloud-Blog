@@ -64,7 +64,6 @@ import type {
   CmsArticleRevision,
   CmsArticleLanguage,
   CmsArticleStatus,
-  CmsEditorDraft,
   CmsPublishInfo,
 } from "@/types/cms";
 import { formatShanghaiDateTime, formatShanghaiTime } from "@/utils/date";
@@ -72,8 +71,24 @@ import { formatShanghaiDateTime, formatShanghaiTime } from "@/utils/date";
 const route = useRoute();
 const router = useRouter();
 
-const draft = reactive(createLocalDraft());
-const localizedDrafts = reactive<Record<CmsArticleLanguage, CmsLocalizedContentDraft>>({
+interface CmsLocalizedEditorDraft extends CmsLocalizedContentDraft {
+  articleId: string;
+  slug: string;
+  status: CmsArticleStatus;
+  createdAtRaw: string;
+  updatedAtRaw: string;
+  publishInfo: CmsPublishInfo;
+}
+
+interface CmsEditorSharedDraft {
+  sourceArticleId: string;
+  translationGroupId: string;
+  iconName: string;
+  tags: string[];
+}
+
+const draft = reactive(createSharedDraft());
+const localizedDrafts = reactive<Record<CmsArticleLanguage, CmsLocalizedEditorDraft>>({
   zh: createLocalizedContentDraft(),
   en: createLocalizedContentDraft(),
 });
@@ -94,7 +109,6 @@ const latestAutosave = ref<CmsArticleAutosave | null>(null);
 const revisionsLoading = ref(false);
 const revisionsError = ref("");
 const editorLocale = ref<CmsArticleLanguage>("zh");
-const translatedArticleId = ref("");
 const imageUploadInput = ref<HTMLInputElement | null>(null);
 const editorContentWrap = ref<HTMLElement | null>(null);
 const stickyTopOffset = ref(80);
@@ -162,12 +176,22 @@ const articleId = computed(() => {
   return typeof value === "string" ? value : "new";
 });
 
-const isNewArticle = computed(() => articleId.value === "new" || !draft.id);
+const isNewArticle = computed(() => articleId.value === "new" || !localizedDrafts.zh.articleId);
 const pageTitle = computed(() => (isNewArticle.value ? "新建文章" : "编辑文章"));
 const pageSubtitle = computed(() =>
   isNewArticle.value ? "先写下草稿，保存后再继续整理细节。" : "保持轻量，随时保存，再决定何时发布。",
 );
 const currentLocalizedDraft = computed(() => localizedDrafts[editorLocale.value]);
+const currentArticleId = computed(() => currentLocalizedDraft.value.articleId);
+const currentSlug = computed({
+  get: () => currentLocalizedDraft.value.slug,
+  set: (value: string) => {
+    currentLocalizedDraft.value.slug = value;
+  },
+});
+const currentStatus = computed(() => currentLocalizedDraft.value.status);
+const currentPublishInfo = computed(() => currentLocalizedDraft.value.publishInfo);
+const currentRevisionsArticleId = computed(() => currentArticleId.value || localizedDrafts.zh.articleId);
 const localizedSummaryLength = computed(() => currentLocalizedDraft.value.summary.length);
 
 const toolbarActions = [
@@ -425,29 +449,29 @@ const activeEditorHeadingPos = computed(() => {
   return null;
 });
 
-function createLocalDraft(): CmsEditorDraft {
+function createSharedDraft(): CmsEditorSharedDraft {
   return {
-    id: "",
-    slug: "",
-    summary: "",
-    title: "",
+    sourceArticleId: "",
+    translationGroupId: "",
     iconName: cmsEditorInitialDraft.iconName,
     tags: [],
-    status: "draft",
-    content: "",
-    contentJson: createEmptyDoc(),
-    publishInfo: createPublishInfo({
-      autosaveState: "idle",
-    }),
   };
 }
 
-function createLocalizedContentDraft(): CmsLocalizedContentDraft {
+function createLocalizedContentDraft(): CmsLocalizedEditorDraft {
   return {
+    articleId: "",
+    slug: "",
+    status: "draft",
     title: "",
     summary: "",
     content: "",
     contentJson: createEmptyDoc(),
+    createdAtRaw: "",
+    updatedAtRaw: "",
+    publishInfo: createPublishInfo({
+      autosaveState: "idle",
+    }),
   };
 }
 
@@ -472,57 +496,58 @@ function createPublishInfo(overrides?: Partial<CmsPublishInfo>): CmsPublishInfo 
   };
 }
 
-function resetDraft(source?: CmsEditorDraft): void {
-  const nextDraft = source ?? createLocalDraft();
+function createLocalizedDraftFromArticle(article?: CmsArticleDetail | null): CmsLocalizedEditorDraft {
+  if (!article) {
+    return createLocalizedContentDraft();
+  }
 
-  pauseAutosaveBriefly();
-  draft.id = nextDraft.id;
-  draft.slug = nextDraft.slug;
-  draft.summary = nextDraft.summary;
-  draft.title = nextDraft.title;
-  draft.iconName = nextDraft.iconName;
-  draft.tags = [...nextDraft.tags];
-  draft.status = nextDraft.status;
-  draft.content = nextDraft.content;
-  draft.contentJson = nextDraft.contentJson;
-  draft.publishInfo = createPublishInfo(nextDraft.publishInfo);
-  localizedDrafts.zh = {
-    title: nextDraft.title,
-    summary: nextDraft.summary ?? "",
-    content: nextDraft.content,
-    contentJson: nextDraft.contentJson,
-  };
-  localizedDrafts.en = createLocalizedContentDraft();
-  translatedArticleId.value = "";
-  editorLocale.value = "zh";
-  setEditorContent(nextDraft.contentJson);
-}
-
-function applyArticle(article: CmsArticleDetail): void {
-  resetDraft({
-    id: article.id,
+  return {
+    articleId: article.id,
     slug: article.slug,
-    summary: article.summary,
-    title: article.title,
-    iconName: article.iconName,
-    tags: [...article.tags],
     status: article.status,
+    title: article.title,
+    summary: article.summary,
     content: article.contentText,
     contentJson: article.contentJson,
+    createdAtRaw: article.createdAt,
+    updatedAtRaw: article.updatedAt,
     publishInfo: createPublishInfo({
       createdAt: formatShanghaiDateTime(article.createdAt),
       updatedAt: formatShanghaiDateTime(article.updatedAt),
       autosaveState: "saved",
       lastSavedAt: formatShanghaiTime(article.updatedAt),
     }),
-  });
-  const englishTranslation = article.translations.find((translation) => translation.language === "en");
-  translatedArticleId.value = englishTranslation?.id ?? "";
+  };
 }
 
-function markSavingState(state: CmsPublishInfo["autosaveState"]): void {
-  draft.publishInfo = createPublishInfo({
-    ...draft.publishInfo,
+function applyWorkspace(
+  sourceArticle: CmsArticleDetail | null,
+  englishArticle: CmsArticleDetail | null,
+  initialLocale: CmsArticleLanguage,
+): void {
+  pauseAutosaveBriefly();
+  const sharedArticle = sourceArticle ?? englishArticle;
+
+  draft.sourceArticleId = sourceArticle?.id ?? englishArticle?.translatedFromArticleId ?? "";
+  draft.translationGroupId =
+    sourceArticle?.translationGroupId ?? englishArticle?.translationGroupId ?? draft.sourceArticleId;
+  draft.iconName = sharedArticle?.iconName ?? cmsEditorInitialDraft.iconName;
+  draft.tags = sharedArticle ? [...sharedArticle.tags] : [];
+  localizedDrafts.zh = createLocalizedDraftFromArticle(sourceArticle);
+  localizedDrafts.en = createLocalizedDraftFromArticle(englishArticle);
+  editorLocale.value = initialLocale;
+  setEditorContent(localizedDrafts[initialLocale].contentJson);
+}
+
+function resetWorkspace(): void {
+  applyWorkspace(null, null, "zh");
+  latestAutosave.value = null;
+  revisions.value = [];
+}
+
+function markSavingState(state: CmsPublishInfo["autosaveState"], locale = editorLocale.value): void {
+  localizedDrafts[locale].publishInfo = createPublishInfo({
+    ...localizedDrafts[locale].publishInfo,
     autosaveState: state,
   });
 }
@@ -555,10 +580,6 @@ function syncDraftFromEditor(currentEditor: EditorSnapshotSource | null | undefi
   const content = currentEditor.getText();
   target.contentJson = contentJson;
   target.content = content;
-  if (editorLocale.value === "zh") {
-    draft.contentJson = contentJson;
-    draft.content = content;
-  }
   editorRevision.value += 1;
 }
 
@@ -574,7 +595,14 @@ function pauseAutosaveBriefly(): void {
 }
 
 function scheduleAutosave(): void {
-  if (autosavePaused || loading.value || saving.value || publishing.value || imageOperationPending.value || !draft.id) {
+  if (
+    autosavePaused ||
+    loading.value ||
+    saving.value ||
+    publishing.value ||
+    imageOperationPending.value ||
+    !currentArticleId.value
+  ) {
     return;
   }
 
@@ -589,7 +617,14 @@ function scheduleAutosave(): void {
 }
 
 async function runAutosave(): Promise<void> {
-  if (autosavePaused || loading.value || saving.value || publishing.value || imageOperationPending.value || !draft.id) {
+  if (
+    autosavePaused ||
+    loading.value ||
+    saving.value ||
+    publishing.value ||
+    imageOperationPending.value ||
+    !currentArticleId.value
+  ) {
     return;
   }
 
@@ -597,10 +632,10 @@ async function runAutosave(): Promise<void> {
   markSavingState("saving");
 
   try {
-    const response = await autosaveCmsArticle(draft.id, getSavePayload());
+    const response = await autosaveCmsArticle(currentArticleId.value, getSavePayload(editorLocale.value));
     if (response.autosave) {
-      draft.publishInfo = createPublishInfo({
-        ...draft.publishInfo,
+      currentLocalizedDraft.value.publishInfo = createPublishInfo({
+        ...currentLocalizedDraft.value.publishInfo,
         autosaveState: "saved",
         lastSavedAt: formatShanghaiTime(response.autosave.createdAt),
       });
@@ -766,7 +801,7 @@ function removeTag(tag: string): void {
 }
 
 function updateStatus(status: CmsArticleStatus): void {
-  draft.status = status;
+  currentLocalizedDraft.value.status = status;
 }
 
 function hasEnglishContent(): boolean {
@@ -774,39 +809,38 @@ function hasEnglishContent(): boolean {
   return Boolean(english.title.trim() || english.summary.trim() || english.content.trim());
 }
 
-function getSavePayload() {
+function getSavePayload(locale: CmsArticleLanguage) {
   syncDraftFromEditor();
-  draft.title = localizedDrafts.zh.title;
-  draft.summary = localizedDrafts.zh.summary;
-  draft.content = localizedDrafts.zh.content;
-  draft.contentJson = localizedDrafts.zh.contentJson;
+  const target = localizedDrafts[locale];
 
   return {
-    title: localizedDrafts.zh.title || undefined,
-    slug: draft.slug || undefined,
-    summary: localizedDrafts.zh.summary || undefined,
+    title: target.title || undefined,
+    slug: target.slug || undefined,
+    summary: target.summary || undefined,
     iconName: draft.iconName || undefined,
     tags: draft.tags,
-    status: draft.status,
-    contentText: localizedDrafts.zh.content || undefined,
-    contentJson: localizedDrafts.zh.contentJson,
-    language: "zh" as CmsArticleLanguage,
-    translationGroupId: draft.id || undefined,
+    status: target.status,
+    contentText: target.content || undefined,
+    contentJson: target.contentJson,
+    language: locale,
+    translationGroupId: locale === "zh" ? draft.translationGroupId || target.articleId || undefined : draft.translationGroupId || undefined,
+    translatedFromArticleId: locale === "en" ? draft.sourceArticleId || undefined : null,
   };
 }
 
 function getEnglishSavePayload(sourceArticle: CmsArticleDetail) {
-  const englishSlug = draft.slug ? `${draft.slug}-en` : `${sourceArticle.slug}-en`;
+  const english = localizedDrafts.en;
+  const englishSlug = english.slug || `${sourceArticle.slug}-en`;
 
   return {
-    title: localizedDrafts.en.title || undefined,
+    title: english.title || undefined,
     slug: englishSlug,
-    summary: localizedDrafts.en.summary || undefined,
+    summary: english.summary || undefined,
     iconName: draft.iconName || undefined,
     tags: [...draft.tags],
-    status: draft.status,
-    contentText: localizedDrafts.en.content || undefined,
-    contentJson: localizedDrafts.en.contentJson,
+    status: english.status,
+    contentText: english.content || undefined,
+    contentJson: english.contentJson,
     language: "en" as CmsArticleLanguage,
     translationGroupId: sourceArticle.translationGroupId || sourceArticle.id,
     translatedFromArticleId: sourceArticle.id,
@@ -821,33 +855,37 @@ async function persistDraft(): Promise<CmsArticleDetail> {
 
   let sourceArticle: CmsArticleDetail;
 
-  if (draft.id) {
-    const response = await updateCmsArticle(draft.id, getSavePayload());
+  if (localizedDrafts.zh.articleId) {
+    const response = await updateCmsArticle(localizedDrafts.zh.articleId, getSavePayload("zh"));
     sourceArticle = response.article;
   } else {
     const response = await createCmsArticle({
       title: localizedDrafts.zh.title || undefined,
-      slug: draft.slug || undefined,
+      slug: localizedDrafts.zh.slug || undefined,
       summary: localizedDrafts.zh.summary || undefined,
       contentText: localizedDrafts.zh.content || undefined,
       iconName: draft.iconName || undefined,
       tags: draft.tags,
-      status: draft.status,
+      status: localizedDrafts.zh.status,
       contentJson: localizedDrafts.zh.contentJson,
       language: "zh" as CmsArticleLanguage,
+      translationGroupId: draft.translationGroupId || undefined,
     });
 
     sourceArticle = response.article;
     await router.replace(`/cms/articles/${sourceArticle.id}`);
   }
 
+  draft.sourceArticleId = sourceArticle.id;
+  draft.translationGroupId = sourceArticle.translationGroupId || sourceArticle.id;
+
   if (hasEnglishContent()) {
-    if (translatedArticleId.value) {
-      const response = await updateCmsArticle(translatedArticleId.value, getEnglishSavePayload(sourceArticle));
-      translatedArticleId.value = response.article.id;
+    if (localizedDrafts.en.articleId) {
+      const response = await updateCmsArticle(localizedDrafts.en.articleId, getEnglishSavePayload(sourceArticle));
+      localizedDrafts.en = createLocalizedDraftFromArticle(response.article);
     } else {
       const response = await createCmsArticle(getEnglishSavePayload(sourceArticle));
-      translatedArticleId.value = response.article.id;
+      localizedDrafts.en = createLocalizedDraftFromArticle(response.article);
     }
   }
 
@@ -857,29 +895,38 @@ async function persistDraft(): Promise<CmsArticleDetail> {
 
 async function loadArticle(id: string): Promise<void> {
   loading.value = true;
-    loadError.value = "";
-    saveMessage.value = "";
-    saveError.value = "";
-    latestAutosave.value = null;
+  loadError.value = "";
+  saveMessage.value = "";
+  saveError.value = "";
+  latestAutosave.value = null;
 
   if (id === "new") {
-    resetDraft(createLocalDraft());
-    revisions.value = [];
+    resetWorkspace();
     loading.value = false;
     return;
   }
 
   try {
     const response = await getCmsArticle(id);
-    applyArticle(response.article);
-    await loadEnglishTranslation(response.article);
-    await loadLatestAutosave(response.article.id, response.article.updatedAt);
-    await loadRevisions(response.article.id);
+    const openedArticle = response.article;
+    const sourceArticle =
+      openedArticle.language === "zh"
+        ? openedArticle
+        : openedArticle.translatedFromArticleId
+          ? (await getCmsArticle(openedArticle.translatedFromArticleId)).article
+          : null;
+    const englishArticle = await resolveEnglishArticle(openedArticle, sourceArticle);
+    const initialLocale = openedArticle.language === "en" ? "en" : "zh";
+    const revisionsArticle = initialLocale === "en" ? englishArticle : sourceArticle;
+
+    applyWorkspace(sourceArticle, englishArticle, initialLocale);
+    await loadLatestAutosave(
+      revisionsArticle?.id ?? openedArticle.id,
+      revisionsArticle?.updatedAt ?? openedArticle.updatedAt,
+    );
+    await loadRevisions(revisionsArticle?.id ?? openedArticle.id);
   } catch (error) {
-    resetDraft({
-      ...createLocalDraft(),
-      id,
-    });
+    resetWorkspace();
     loadError.value = isApiError(error)
       ? `文章详情加载失败，当前保留本地草稿视图：${error.message}`
       : "文章详情加载失败，当前保留本地草稿视图。";
@@ -888,27 +935,25 @@ async function loadArticle(id: string): Promise<void> {
   }
 }
 
-async function loadEnglishTranslation(article: CmsArticleDetail): Promise<void> {
-  const englishTranslation = article.translations.find((translation) => translation.language === "en");
+async function resolveEnglishArticle(
+  openedArticle: CmsArticleDetail,
+  sourceArticle: CmsArticleDetail | null,
+): Promise<CmsArticleDetail | null> {
+  if (openedArticle.language === "en") {
+    return openedArticle;
+  }
 
+  const englishTranslation = (sourceArticle ?? openedArticle).translations.find(
+    (translation) => translation.language === "en",
+  );
   if (!englishTranslation) {
-    localizedDrafts.en = createLocalizedContentDraft();
-    translatedArticleId.value = "";
-    return;
+    return null;
   }
 
   try {
-    const response = await getCmsArticle(englishTranslation.id);
-    localizedDrafts.en = {
-      title: response.article.title,
-      summary: response.article.summary,
-      content: response.article.contentText,
-      contentJson: response.article.contentJson,
-    };
-    translatedArticleId.value = response.article.id;
+    return (await getCmsArticle(englishTranslation.id)).article;
   } catch {
-    localizedDrafts.en = createLocalizedContentDraft();
-    translatedArticleId.value = "";
+    return null;
   }
 }
 
@@ -938,22 +983,18 @@ function handleRestoreAutosave(): void {
     return;
   }
 
-  resetDraft({
-    ...draft,
-    id: draft.id,
-    slug: autosave.slug ?? draft.slug,
-    summary: autosave.summary ?? draft.summary,
-    title: autosave.title,
-    iconName: autosave.iconName,
-    tags: [...autosave.tags],
-    content: autosave.contentText,
-    contentJson: autosave.contentJson,
-    publishInfo: createPublishInfo({
-      ...draft.publishInfo,
-      autosaveState: "saved",
-      lastSavedAt: formatShanghaiTime(autosave.createdAt),
-    }),
+  const target = currentLocalizedDraft.value;
+  target.title = autosave.title;
+  target.content = autosave.contentText;
+  target.contentJson = autosave.contentJson;
+  draft.iconName = autosave.iconName;
+  draft.tags = [...autosave.tags];
+  target.publishInfo = createPublishInfo({
+    ...target.publishInfo,
+    autosaveState: "saved",
+    lastSavedAt: formatShanghaiTime(autosave.createdAt),
   });
+  setEditorContent(autosave.contentJson);
   latestAutosave.value = null;
   saveMessage.value = "已从自动保存恢复，请确认后手动保存。";
   saveError.value = "";
@@ -969,7 +1010,7 @@ function switchEditorLocale(nextLocale: CmsArticleLanguage): void {
   setEditorContent(localizedDrafts[nextLocale].contentJson);
 }
 
-async function loadRevisions(id = draft.id): Promise<void> {
+async function loadRevisions(id = currentRevisionsArticleId.value): Promise<void> {
   if (!id) {
     revisions.value = [];
     return;
@@ -996,7 +1037,8 @@ async function handleSave(): Promise<void> {
 
   try {
     const article = await persistDraft();
-    applyArticle(article);
+    const englishArticle = await resolveEnglishArticle(article, article);
+    applyWorkspace(article, englishArticle, editorLocale.value);
     await loadRevisions(article.id);
     saveMessage.value = "已保存当前文章。";
   } catch (error) {
@@ -1016,11 +1058,12 @@ async function handlePublish(): Promise<void> {
   try {
     const savedArticle = await persistDraft();
     const response = await publishCmsArticle(savedArticle.id);
-    if (translatedArticleId.value && hasEnglishContent()) {
-      await publishCmsArticle(translatedArticleId.value);
+    if (localizedDrafts.en.articleId && hasEnglishContent()) {
+      const englishResponse = await publishCmsArticle(localizedDrafts.en.articleId);
+      localizedDrafts.en = createLocalizedDraftFromArticle(englishResponse.article);
     }
-    applyArticle(response.article);
-    await loadEnglishTranslation(response.article);
+    const englishArticle = await resolveEnglishArticle(response.article, response.article);
+    applyWorkspace(response.article, englishArticle, editorLocale.value);
     await loadRevisions(response.article.id);
     saveMessage.value = "文章已发布。";
   } catch (error) {
@@ -1032,7 +1075,7 @@ async function handlePublish(): Promise<void> {
 }
 
 async function handleRestoreRevision(revision: CmsArticleRevision): Promise<void> {
-  if (!draft.id) {
+  if (!currentArticleId.value) {
     return;
   }
 
@@ -1047,8 +1090,14 @@ async function handleRestoreRevision(revision: CmsArticleRevision): Promise<void
   markSavingState("saving");
 
   try {
-    const response = await restoreCmsArticleRevision(draft.id, revision.id);
-    applyArticle(response.article);
+    const response = await restoreCmsArticleRevision(currentArticleId.value, revision.id);
+    if (response.article.language === "en") {
+      localizedDrafts.en = createLocalizedDraftFromArticle(response.article);
+      setEditorContent(localizedDrafts.en.contentJson);
+    } else {
+      const englishArticle = await resolveEnglishArticle(response.article, response.article);
+      applyWorkspace(response.article, englishArticle, editorLocale.value);
+    }
     await loadRevisions(response.article.id);
     saveMessage.value = "已恢复所选版本。";
   } catch (error) {
@@ -1078,7 +1127,7 @@ function handlePreview(): void {
   syncDraftFromEditor();
   saveError.value = "";
 
-  const slug = draft.slug?.trim() ?? "";
+  const slug = currentLocalizedDraft.value.slug?.trim() ?? "";
 
   if (!slug) {
     saveMessage.value = "保存文章并生成 slug 后可预览公开页。";
@@ -1095,7 +1144,7 @@ async function runAiAction(key: CmsAiActionKey): Promise<void> {
   aiMessage.value = "AI 正在处理当前正文...";
   aiError.value = "";
 
-  if (!draft.content.trim()) {
+  if (!currentLocalizedDraft.value.content.trim()) {
     aiMessage.value = "";
     aiError.value = "请先写入正文内容，再使用 AI 操作。";
     activeAiKey.value = null;
@@ -1103,15 +1152,15 @@ async function runAiAction(key: CmsAiActionKey): Promise<void> {
   }
 
   const input = {
-    title: draft.title,
-    contentText: draft.content,
-    articleId: draft.id || undefined,
+    title: currentLocalizedDraft.value.title,
+    contentText: currentLocalizedDraft.value.content,
+    articleId: currentLocalizedDraft.value.articleId || undefined,
   };
 
   try {
     if (key === "summary") {
       const result = await generateSummary(input);
-      draft.summary = result.summary;
+      currentLocalizedDraft.value.summary = result.summary;
       aiMessage.value = `已生成摘要候选：${result.summary}`;
       return;
     }
@@ -1155,7 +1204,7 @@ async function handleTranslateToEnglish(): Promise<void> {
 
   try {
     const result = await translateContent({
-      articleId: draft.id || undefined,
+      articleId: localizedDrafts.zh.articleId || undefined,
       sourceLanguage: "zh",
       targetLanguage: "en",
       title: localizedDrafts.zh.title,
@@ -1165,6 +1214,7 @@ async function handleTranslateToEnglish(): Promise<void> {
     });
 
     localizedDrafts.en = {
+      ...localizedDrafts.en,
       title: result.title,
       summary: result.summary,
       content: result.contentText,
@@ -1286,12 +1336,12 @@ async function uploadAndInsertImage(file: File): Promise<void> {
   saveError.value = "";
 
   try {
-    if (!draft.id) {
+    if (!currentArticleId.value) {
       await ensureDraftExistsForImageOperation("正在先保存文章，以便图片关联到当前文章...");
     }
 
     const uploaded = await uploadCmsImage(file, {
-      articleId: draft.id,
+      articleId: currentArticleId.value || undefined,
     });
 
     currentEditor.chain().focus().setImage({
@@ -1335,13 +1385,13 @@ async function convertExternalImage(target: ImageNodeContext | null = hoveredIma
   saveError.value = "";
 
   try {
-    if (!draft.id) {
+    if (!currentArticleId.value) {
       await ensureDraftExistsForImageOperation("正在先保存文章，以便外链图片能关联到当前文章...");
     }
 
     saveMessage.value = "正在转存外链图片到媒体库...";
     const uploaded = await uploadCmsImageFromUrl(target.src, {
-      articleId: draft.id,
+      articleId: currentArticleId.value || undefined,
     });
 
     replaceImageAtPosition(target.pos, {
@@ -1364,7 +1414,8 @@ async function convertExternalImage(target: ImageNodeContext | null = hoveredIma
 async function ensureDraftExistsForImageOperation(message: string): Promise<void> {
   saveMessage.value = message;
   const article = await persistDraft();
-  applyArticle(article);
+  const englishArticle = await resolveEnglishArticle(article, article);
+  applyWorkspace(article, englishArticle, editorLocale.value);
   await loadRevisions(article.id);
 }
 
@@ -1530,8 +1581,8 @@ watch(
     localizedDrafts.en.title,
     localizedDrafts.en.summary,
     draft.iconName,
-    draft.status,
-    draft.slug,
+    currentLocalizedDraft.value.status,
+    currentLocalizedDraft.value.slug,
     draft.tags.join("\u001f"),
   ],
   () => {
@@ -1720,7 +1771,7 @@ watch(
           <p class="panel-help slug-prefix">https://blog.yamds.cafe/articles/</p>
           <label class="slug-input" aria-label="文章访问链接">
             <input
-              v-model="draft.slug"
+              v-model="currentSlug"
               type="text"
               inputmode="url"
               autocomplete="off"
@@ -1732,11 +1783,11 @@ watch(
         </section>
         <section class="panel">
           <PublishPanel
-            :status="draft.status"
-            :created-at="draft.publishInfo.createdAt"
-            :updated-at="draft.publishInfo.updatedAt"
-            :autosave-state="draft.publishInfo.autosaveState"
-            :last-saved-at="draft.publishInfo.lastSavedAt"
+            :status="currentStatus"
+            :created-at="currentPublishInfo.createdAt"
+            :updated-at="currentPublishInfo.updatedAt"
+            :autosave-state="currentPublishInfo.autosaveState"
+            :last-saved-at="currentPublishInfo.lastSavedAt"
             @update:status="updateStatus"
           />
         </section>
@@ -1763,11 +1814,11 @@ watch(
         <section class="panel revisions-panel">
           <div class="panel-heading">
             <h3>版本</h3>
-            <button type="button" class="panel-link" :disabled="!draft.id || revisionsLoading" @click="loadRevisions()">
+            <button type="button" class="panel-link" :disabled="!currentRevisionsArticleId || revisionsLoading" @click="loadRevisions()">
               刷新
             </button>
           </div>
-          <p v-if="!draft.id" class="panel-help">首次保存后会记录版本。</p>
+          <p v-if="!currentRevisionsArticleId" class="panel-help">首次保存后会记录版本。</p>
           <p v-else-if="revisionsLoading" class="panel-help">正在读取版本...</p>
           <p v-else-if="revisionsError" class="panel-help error">{{ revisionsError }}</p>
           <ul v-else-if="revisions.length" class="revision-list">

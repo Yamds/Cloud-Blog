@@ -1,17 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
+import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { useI18n } from "@/i18n/useI18n";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleMasonryCard from "../../components/article/ArticleMasonryCard.vue";
-import { useLanguageStore } from "@/stores/language";
 import type { Article } from "../../types/article";
 
 const { t } = useI18n();
 const route = useRoute();
-const languageStore = useLanguageStore();
-const { locale } = storeToRefs(languageStore);
 const articles = ref<Article[]>([]);
 const isLoadingArticles = ref(true);
 const articlesLoadError = ref("");
@@ -47,21 +43,17 @@ const loadArticles = async () => {
   articlesLoadError.value = "";
 
   try {
-    articles.value = await getPublishedArticles(locale.value);
+    articles.value = await getPublishedArticles();
   } catch (error) {
     articles.value = [];
     articlesLoadError.value =
-      error instanceof Error ? error.message : "文章暂时无法加载，请稍后再试。";
+      error instanceof Error ? error.message : t("articles.loadError");
   } finally {
     isLoadingArticles.value = false;
   }
 };
 
 onMounted(() => {
-  void loadArticles();
-});
-
-watch(locale, () => {
   void loadArticles();
 });
 </script>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
 import type { CmsStorageSummary } from "@/types/cms";
 
@@ -14,6 +15,8 @@ const props = withDefaults(
     visibleBytes: undefined,
   },
 );
+
+const { t } = useI18n();
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -33,38 +36,38 @@ function formatBytes(bytes: number): string {
 const cards = computed(() => [
   {
     key: "total",
-    label: "总对象数",
+    label: t("cms.storage.overview.totalObjects"),
     icon: "ph:stack",
     value: props.summary.totalObjects.toString(),
-    change: `${props.summary.updatedRecentlyCount} 个最近 7 天更新`,
+    change: t("cms.storage.overview.totalObjectsChange", { count: props.summary.updatedRecentlyCount }),
   },
   {
     key: "images",
-    label: "图片数",
+    label: t("cms.storage.overview.images"),
     icon: "ph:image-square",
     value: props.summary.imageCount.toString(),
-    change: `${props.summary.processingCount} 个处理中`,
+    change: t("cms.storage.overview.imagesChange", { count: props.summary.processingCount }),
   },
   {
     key: "attachments",
-    label: "附件数",
+    label: t("cms.storage.overview.attachments"),
     icon: "ph:paperclip",
     value: props.summary.attachmentCount.toString(),
-    change: `${props.summary.orphanedCount} 个待整理对象`,
+    change: t("cms.storage.overview.attachmentsChange", { count: props.summary.orphanedCount }),
   },
   {
     key: "capacity",
-    label: "总容量",
+    label: t("cms.storage.overview.capacity"),
     icon: "ph:database",
     value: formatBytes(props.summary.totalBytes),
-    change: `${props.summary.linkedCount} 个对象已关联文章`,
+    change: t("cms.storage.overview.capacityChange", { count: props.summary.linkedCount }),
   },
   {
     key: "linked",
-    label: "已关联对象",
+    label: t("cms.storage.overview.linked"),
     icon: "ph:link-simple",
     value: props.summary.linkedCount.toString(),
-    change: `${props.summary.orphanedCount} 个对象待整理`,
+    change: t("cms.storage.overview.linkedChange", { count: props.summary.orphanedCount }),
   },
 ]);
 
@@ -74,10 +77,13 @@ const filteredHint = computed(() => {
   }
 
   if (props.visibleCount === props.summary.totalObjects) {
-    return `当前显示全部对象，合计 ${formatBytes(props.visibleBytes)}。`;
+    return t("cms.storage.overview.filteredAll", { size: formatBytes(props.visibleBytes) });
   }
 
-  return `当前筛选命中 ${props.visibleCount} 个对象，合计 ${formatBytes(props.visibleBytes)}。`;
+  return t("cms.storage.overview.filteredPartial", {
+    count: props.visibleCount,
+    size: formatBytes(props.visibleBytes),
+  });
 });
 </script>
 

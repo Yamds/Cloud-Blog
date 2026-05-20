@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "./IconifyIcon.vue";
 
 const props = withDefaults(
@@ -12,11 +13,19 @@ const props = withDefaults(
     icon: "ph:files-light",
   },
 );
+
+const { t } = useI18n();
 </script>
 
 <template>
   <section class="empty-state" aria-live="polite">
-    <IconifyIcon class="empty-icon" :icon="props.icon" size="28" title="空状态图标" aria-label="空状态图标" />
+    <IconifyIcon
+      class="empty-icon"
+      :icon="props.icon"
+      size="28"
+      :title="t('empty.iconLabel')"
+      :aria-label="t('empty.iconLabel')"
+    />
     <h3 class="empty-title">{{ props.title }}</h3>
     <p v-if="props.description" class="empty-description">{{ props.description }}</p>
     <div v-if="$slots.action" class="empty-action">

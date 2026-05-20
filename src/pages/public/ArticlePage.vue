@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute, useRouter } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import { recordPageView } from "@/api/analytics";
 import { useI18n } from "@/i18n/useI18n";
 import { getSiteSettings } from "@/api/settings";
@@ -22,12 +22,9 @@ import { useLanguageStore } from "@/stores/language";
 import { createArticleHeadingId, getArticleBlockText } from "@/utils/articleContent";
 
 const route = useRoute();
-const router = useRouter();
 const { t } = useI18n();
 const authStore = useAuthStore();
-const languageStore = useLanguageStore();
 const { isAdmin, isAuthenticated, isLoading: isAuthLoading, user } = storeToRefs(authStore);
-const { locale } = storeToRefs(languageStore);
 const article = ref<Article>();
 const comments = ref<ArticleComment[]>([]);
 const isLoadingArticle = ref(true);
@@ -78,7 +75,7 @@ const loadComments = async (targetSlug: string, options: { silent?: boolean } = 
     comments.value = await getArticleComments(targetSlug);
   } catch (error) {
     comments.value = [];
-    commentsError.value = getErrorMessage(error, "评论暂时无法加载，请稍后再试。");
+    commentsError.value = getErrorMessage(error, t("article.commentsLoadError"));
   } finally {
     isLoadingComments.value = false;
   }
@@ -116,7 +113,7 @@ const loadArticle = async (targetSlug: string) => {
     article.value = undefined;
     comments.value = [];
     commentsError.value = "";
-    articleLoadError.value = getErrorMessage(error, "文章暂时无法加载，请稍后再试。");
+    articleLoadError.value = getErrorMessage(error, t("article.loadError"));
   } finally {
     isLoadingArticle.value = false;
   }
@@ -155,7 +152,7 @@ const handleSubmitComment = async (content: string) => {
     await createArticleComment(slug.value, content);
     await loadComments(slug.value, { silent: true });
   } catch (error) {
-    commentsError.value = getErrorMessage(error, "评论发布失败，请稍后再试。");
+    commentsError.value = getErrorMessage(error, t("article.commentsSubmitError"));
     throw error;
   } finally {
     isSubmittingComment.value = false;
@@ -174,7 +171,7 @@ const handleSubmitReply = async (payload: { commentId: string; content: string }
     await createCommentReply(payload.commentId, payload.content);
     await loadComments(slug.value, { silent: true });
   } catch (error) {
-    commentsError.value = getErrorMessage(error, "回复发布失败，请稍后再试。");
+    commentsError.value = getErrorMessage(error, t("article.commentsReplyError"));
     throw error;
   } finally {
     submittingReplyToId.value = "";
@@ -193,7 +190,7 @@ const handleDeleteComment = async (commentId: string) => {
     await deleteComment(commentId);
     await loadComments(slug.value, { silent: true });
   } catch (error) {
-    commentsError.value = getErrorMessage(error, "评论删除失败，请稍后再试。");
+    commentsError.value = getErrorMessage(error, t("article.commentsDeleteError"));
     throw error;
   } finally {
     deletingCommentId.value = "";
@@ -239,20 +236,6 @@ watch(
   },
   { immediate: true },
 );
-
-watch(locale, (nextLocale) => {
-  const currentArticle = article.value;
-
-  if (!currentArticle || currentArticle.language === nextLocale) {
-    return;
-  }
-
-  const target = currentArticle.translations?.find((translation) => translation.language === nextLocale);
-
-  if (target) {
-    void router.push(`/articles/${target.slug}`);
-  }
-});
 
 watch(article, () => {
   document.title = article.value ? `${article.value.title} - ${SITE_TITLE}` : SITE_TITLE;

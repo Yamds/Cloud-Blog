@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
 import type { CmsStorageObject, CmsStorageViewMode } from "@/types/cms";
 import { formatShanghaiDateTime } from "@/utils/date";
@@ -14,22 +15,24 @@ const emit = defineEmits<{
   remove: [item: CmsStorageObject];
 }>();
 
+const { t } = useI18n();
+
 const statusMap = {
-  ready: { label: "可用", icon: "ph:check-circle", tone: "ready" },
-  processing: { label: "处理中", icon: "ph:spinner-gap", tone: "processing" },
-  orphaned: { label: "待整理", icon: "ph:warning-circle", tone: "orphaned" },
-  error: { label: "异常", icon: "ph:warning-octagon", tone: "error" },
+  ready: { label: "cms.storage.filters.statusReady", icon: "ph:check-circle", tone: "ready" },
+  processing: { label: "cms.storage.filters.statusProcessing", icon: "ph:spinner-gap", tone: "processing" },
+  orphaned: { label: "cms.storage.filters.statusOrphaned", icon: "ph:warning-circle", tone: "orphaned" },
+  error: { label: "cms.storage.filters.statusError", icon: "ph:warning-octagon", tone: "error" },
 } as const;
 
 const articleStatusMap = {
-  published: { label: "已发布", tone: "published" },
-  draft: { label: "草稿", tone: "draft" },
-  archived: { label: "归档", tone: "archived" },
+  published: { label: "cms.storage.articleStatusPublished", tone: "published" },
+  draft: { label: "cms.storage.articleStatusDraft", tone: "draft" },
+  archived: { label: "cms.storage.articleStatusArchived", tone: "archived" },
 } as const;
 
 const typeMap = {
-  image: { label: "图片", icon: "ph:image-square" },
-  attachment: { label: "附件", icon: "ph:paperclip" },
+  image: { label: "cms.storage.filters.typeImage", icon: "ph:image-square" },
+  attachment: { label: "cms.storage.filters.typeAttachment", icon: "ph:paperclip" },
 } as const;
 
 function formatBytes(bytes: number): string {
@@ -69,18 +72,18 @@ function getDisplayName(item: CmsStorageObject): string {
   <section class="objects-card">
     <div v-if="objects.length === 0" class="empty-state">
       <IconifyIcon icon="ph:folder-open" :size="28" />
-      <p>当前筛选下没有对象，试试放宽条件或加入新的文件。</p>
+      <p>{{ t("cms.storage.table.empty") }}</p>
     </div>
 
     <div v-else-if="viewMode === 'table'" class="table-wrap">
       <div class="table-head">
-        <span>预览</span>
-        <span>文件名</span>
-        <span>类型 / 状态</span>
-        <span>大小</span>
-        <span>关联文章</span>
-        <span>更新时间</span>
-        <span>操作</span>
+        <span>{{ t("cms.storage.table.preview") }}</span>
+        <span>{{ t("cms.storage.table.filename") }}</span>
+        <span>{{ t("cms.storage.table.typeStatus") }}</span>
+        <span>{{ t("cms.storage.table.size") }}</span>
+        <span>{{ t("cms.storage.table.relatedArticle") }}</span>
+        <span>{{ t("cms.storage.table.updatedAt") }}</span>
+        <span>{{ t("cms.shared.actions") }}</span>
       </div>
 
       <article v-for="item in objects" :key="item.id" class="table-row">
@@ -105,11 +108,11 @@ function getDisplayName(item: CmsStorageObject): string {
         <div class="type-cell">
           <span class="pill">
             <IconifyIcon :icon="typeMap[item.type].icon" :size="14" />
-            {{ typeMap[item.type].label }}
+            {{ t(typeMap[item.type].label) }}
           </span>
           <span class="pill status-pill" :class="statusMap[item.status].tone">
             <IconifyIcon :icon="statusMap[item.status].icon" :size="14" />
-            {{ statusMap[item.status].label }}
+            {{ t(statusMap[item.status].label) }}
           </span>
         </div>
 
@@ -119,22 +122,22 @@ function getDisplayName(item: CmsStorageObject): string {
           <template v-if="item.relatedArticle">
             <p class="article-title">{{ item.relatedArticle.articleTitle }}</p>
             <span class="relation-badge" :class="articleStatusMap[item.relatedArticle.articleStatus].tone">
-              {{ articleStatusMap[item.relatedArticle.articleStatus].label }}
+              {{ t(articleStatusMap[item.relatedArticle.articleStatus].label) }}
             </span>
           </template>
-          <p v-else class="article-empty">暂未关联</p>
+          <p v-else class="article-empty">{{ t("cms.storage.table.noRelation") }}</p>
         </div>
 
         <time class="mono" :datetime="item.updatedAt">{{ formatShanghaiDateTime(item.updatedAt) }}</time>
 
         <div class="actions">
-          <button type="button" title="预览对象" @click="emit('preview', item)">
+          <button type="button" :title="t('cms.storage.table.previewObject')" @click="emit('preview', item)">
             <IconifyIcon icon="ph:eye" :size="16" />
           </button>
-          <button type="button" title="复制访问路径" @click="emit('copy', item)">
+          <button type="button" :title="t('cms.storage.table.copyPath')" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
           </button>
-          <button type="button" title="从当前会话移除" @click="emit('remove', item)">
+          <button type="button" :title="t('cms.storage.table.remove')" @click="emit('remove', item)">
             <IconifyIcon icon="ph:trash" :size="16" />
           </button>
         </div>
@@ -160,37 +163,37 @@ function getDisplayName(item: CmsStorageObject): string {
           <div class="card-tags">
             <span class="pill">
               <IconifyIcon :icon="typeMap[item.type].icon" :size="14" />
-              {{ typeMap[item.type].label }}
+              {{ t(typeMap[item.type].label) }}
             </span>
             <span class="pill status-pill" :class="statusMap[item.status].tone">
               <IconifyIcon :icon="statusMap[item.status].icon" :size="14" />
-              {{ statusMap[item.status].label }}
+              {{ t(statusMap[item.status].label) }}
             </span>
           </div>
 
           <p class="object-key card-key">{{ getDisplayName(item) }}</p>
           <p class="object-meta">{{ item.mime }} · {{ formatBytes(item.sizeBytes) }}</p>
           <p class="article-line">
-            {{ item.relatedArticle ? item.relatedArticle.articleTitle : "暂未关联文章" }}
+            {{ item.relatedArticle ? item.relatedArticle.articleTitle : t("cms.storage.table.noRelatedArticle") }}
           </p>
           <span
             v-if="item.relatedArticle"
             class="relation-badge"
             :class="articleStatusMap[item.relatedArticle.articleStatus].tone"
           >
-            {{ articleStatusMap[item.relatedArticle.articleStatus].label }}
+            {{ t(articleStatusMap[item.relatedArticle.articleStatus].label) }}
           </span>
           <time class="mono" :datetime="item.updatedAt">{{ formatShanghaiDateTime(item.updatedAt) }}</time>
         </div>
 
         <div class="actions">
-          <button type="button" title="预览对象" @click="emit('preview', item)">
+          <button type="button" :title="t('cms.storage.table.previewObject')" @click="emit('preview', item)">
             <IconifyIcon icon="ph:eye" :size="16" />
           </button>
-          <button type="button" title="复制访问路径" @click="emit('copy', item)">
+          <button type="button" :title="t('cms.storage.table.copyPath')" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
           </button>
-          <button type="button" title="从当前会话移除" @click="emit('remove', item)">
+          <button type="button" :title="t('cms.storage.table.remove')" @click="emit('remove', item)">
             <IconifyIcon icon="ph:trash" :size="16" />
           </button>
         </div>

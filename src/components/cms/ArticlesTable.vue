@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
+import { useI18n } from "@/i18n/useI18n";
 import IconifyIcon from "@/components/common/IconifyIcon.vue";
 import type { CmsArticleRow } from "@/types/cms";
 
@@ -14,21 +15,23 @@ defineEmits<{
   delete: [article: CmsArticleRow];
 }>();
 
+const { t } = useI18n();
+
 const statusMap = {
-  published: { label: "已发布", icon: "ph:check-circle" },
-  draft: { label: "草稿", icon: "ph:file-dashed" },
-  archived: { label: "已归档", icon: "ph:archive" },
+  published: { label: "cms.articlesTable.published", icon: "ph:check-circle" },
+  draft: { label: "cms.articlesTable.draft", icon: "ph:file-dashed" },
+  archived: { label: "cms.articlesTable.archived", icon: "ph:archive" },
 } as const;
 </script>
 
 <template>
   <div class="table-wrap">
     <div class="table-head">
-      <span>图标</span>
-      <span>标题</span>
-      <span>日期</span>
-      <span>状态</span>
-      <span>操作</span>
+      <span>{{ t("cms.shared.icon") }}</span>
+      <span>{{ t("cms.shared.title") }}</span>
+      <span>{{ t("cms.shared.date") }}</span>
+      <span>{{ t("cms.shared.status") }}</span>
+      <span>{{ t("cms.shared.actions") }}</span>
     </div>
     <div v-for="article in articles" :key="article.id" class="table-row">
       <IconifyIcon :icon="article.iconName" :size="30" />
@@ -36,17 +39,22 @@ const statusMap = {
       <time>{{ article.date }}</time>
       <span class="status" :class="article.status">
         <IconifyIcon :icon="statusMap[article.status].icon" :size="14" />
-        {{ statusMap[article.status].label }}
+        {{ t(statusMap[article.status].label) }}
       </span>
       <div class="actions">
-        <RouterLink :to="`/cms/articles/${article.id}`" class="action-btn" title="编辑" aria-label="编辑">
+        <RouterLink
+          :to="`/cms/articles/${article.id}`"
+          class="action-btn"
+          :title="t('cms.shared.edit')"
+          :aria-label="t('cms.shared.edit')"
+        >
           <IconifyIcon icon="ph:pencil-simple" />
         </RouterLink>
         <button
           type="button"
           class="action-btn"
-          title="归档"
-          aria-label="归档"
+          :title="t('cms.shared.archive')"
+          :aria-label="t('cms.shared.archive')"
           :disabled="archiveDisabled || article.status === 'archived'"
           @click="$emit('archive', article.id)"
         >
@@ -55,8 +63,8 @@ const statusMap = {
         <button
           type="button"
           class="action-btn danger"
-          title="删除"
-          aria-label="删除"
+          :title="t('cms.shared.delete')"
+          :aria-label="t('cms.shared.delete')"
           :disabled="deleteDisabled"
           @click="$emit('delete', article)"
         >
@@ -64,7 +72,7 @@ const statusMap = {
         </button>
       </div>
     </div>
-    <p v-if="articles.length === 0" class="empty-row">暂无文章。</p>
+    <p v-if="articles.length === 0" class="empty-row">{{ t("cms.articlesTable.empty") }}</p>
   </div>
 </template>
 

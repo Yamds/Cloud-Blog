@@ -38,7 +38,7 @@ const formattedTime = computed(() => {
     return props.comment.createdAt;
   }
 
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(timestamp);
