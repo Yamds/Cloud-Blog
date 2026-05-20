@@ -21,6 +21,9 @@ export interface CmsArticleRow {
   title: string;
   date: string;
   status: CmsArticleStatus;
+  language?: CmsArticleLanguage;
+  slug?: string;
+  tags?: string[];
 }
 
 export interface CmsArticleStats {

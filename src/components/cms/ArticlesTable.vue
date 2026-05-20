@@ -35,7 +35,14 @@ const statusMap = {
     </div>
     <div v-for="article in articles" :key="article.id" class="table-row">
       <IconifyIcon :icon="article.iconName" :size="30" />
-      <p class="title">{{ article.title }}</p>
+      <div class="title-cell">
+        <p class="title">{{ article.title }}</p>
+        <span v-if="article.slug || article.language" class="meta-line">
+          <template v-if="article.language">{{ article.language.toUpperCase() }}</template>
+          <template v-if="article.language && article.slug"> · </template>
+          <template v-if="article.slug">{{ article.slug }}</template>
+        </span>
+      </div>
       <time>{{ article.date }}</time>
       <span class="status" :class="article.status">
         <IconifyIcon :icon="statusMap[article.status].icon" :size="14" />
@@ -84,7 +91,9 @@ const statusMap = {
 .table-row:last-child { border-bottom: 0; }
 .table-row:hover { background: var(--bg); }
 .empty-row { padding: var(--space-4); color: var(--text-secondary); text-align: center; }
-.title { font-size: 16px; }
+.title-cell { min-width: 0; }
+.title { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.meta-line { display: block; margin-top: 3px; overflow: hidden; color: var(--text-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 time { color: var(--text-secondary); font-family: var(--font-heading); }
 .status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-tertiary); }
 .status.published { color: var(--accent); border-color: var(--accent); }

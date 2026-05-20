@@ -34,6 +34,8 @@ function mapArticleRow(article: CmsArticleDetail): CmsArticleRow {
     title: article.title || t("cms.dashboard.articleUntitled"),
     date: formatShanghaiDate(article.updatedAt || article.createdAt || article.publishedAt),
     status: article.status,
+    language: article.language,
+    slug: article.slug,
   };
 }
 
@@ -248,6 +250,7 @@ function formatAnalyticsDayLabel(value: string): string {
           <p v-if="articles.length === 0" class="section-note">{{ t("cms.dashboard.recentEmpty") }}</p>
         </div>
         <div class="section-actions">
+          <RouterLink class="secondary-action" to="/cms/articles">{{ t("cms.dashboard.linkAllArticles") }}</RouterLink>
           <RouterLink class="secondary-action" to="/cms/comments">{{ t("cms.dashboard.linkComments") }}</RouterLink>
           <RouterLink class="secondary-action" to="/cms/analytics">{{ t("cms.dashboard.linkAnalytics") }}</RouterLink>
           <RouterLink class="secondary-action" to="/cms/settings">{{ t("cms.dashboard.linkSettings") }}</RouterLink>

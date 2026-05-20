@@ -53,6 +53,11 @@ const router = createRouter({
           component: () => import('@/pages/cms/CmsEditorPage.vue'),
         },
         {
+          path: 'articles',
+          name: 'cms-articles',
+          component: () => import('@/pages/cms/CmsArticlesPage.vue'),
+        },
+        {
           path: 'storage',
           name: 'cms-storage',
           component: () => import('@/pages/cms/CmsStoragePage.vue'),
