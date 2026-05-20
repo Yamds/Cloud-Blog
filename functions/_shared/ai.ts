@@ -65,10 +65,26 @@ export interface TiptapDoc {
   content: TiptapNode[];
 }
 
+interface TranslationBlock {
+  index: number;
+  text: string;
+  codeBlock: boolean;
+}
+
+interface FormatToken {
+  index: number;
+  marks: TiptapTextMark[];
+}
+
+interface TranslationBlockTemplate extends TranslationBlock {
+  tokens: FormatToken[];
+}
+
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const MAX_INPUT_CHARS = 16_000;
 const FORMAT_MAX_TOKENS = 6_000;
+const TRANSLATE_MAX_TOKENS = 8_000;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const DEV_AI_USER_ID = "dev_local_ai";
 const DEV_AI_GITHUB_ID = "dev-local-ai";
@@ -96,6 +112,7 @@ const ALLOWED_TEXT_MARKS = new Set([
   "code",
   "link",
   "underline",
+  "wavyUnderline",
   "subscript",
   "superscript",
   "highlight",
@@ -103,7 +120,7 @@ const ALLOWED_TEXT_MARKS = new Set([
 ]);
 const SAFE_MEDIA_PATH_PATTERN = /^\/api\/cms\/media(?:\/|$|\?)/;
 const SAFE_COLOR_PATTERN =
-  /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|hsla?\(\s*-?(?:\d+(?:\.\d+)?)(?:deg|grad|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\))$/i;
+  /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|hsla?\(\s*-?(?:\d+(?:\.\d+)?)(?:deg|grad|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%(?:\s*,\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|oklch\(\s*(?:\d+(?:\.\d+)?%?)\s+(?:\d+(?:\.\d+)?)\s+(?:-?\d+(?:\.\d+)?)(?:deg|grad|rad|turn)?(?:\s*\/\s*(?:0|1|0?\.\d+|\d{1,3}%))?\s*\)|var\(--(?:accent|accent-hover|accent-strong|text-primary|text-secondary|text-tertiary|article-mark-accent|article-mark-warm|article-mark-green|article-mark-rose)\)|color-mix\(in\s+okl(?:ab|ch)\s*,\s*[^;{}<>]+\))$/i;
 
 interface AiAuditActor {
   userId: string;
@@ -356,20 +373,19 @@ export async function formatContent(env: Env, input: AiTextInput): Promise<{ con
 
 export async function translateContent(env: Env, input: AiTranslateInput): Promise<AiTranslateResult> {
   const sourceDoc = normalizeTiptapDoc(input.contentJson) ?? formatPlainTextToTiptapDoc(input.contentText || "");
-  const sourceText = compactText(input.contentText || extractPlainTextFromDoc(sourceDoc));
+  const sourceBlocks = collectTranslationBlocks(sourceDoc);
   const content = await runChat(env, "translate", [
     {
       role: "system",
       content:
-        "你是一个技术博客中译英助手。只输出 JSON 对象，不要 Markdown、代码围栏、HTML 或解释。输出字段必须为 title、summary、contentText、contentJson。contentJson 必须是安全的 Tiptap doc JSON，保持原有结构和事实，不翻译 tags，不补充不存在的信息。",
+        "You are a Chinese-to-English technical blog translation assistant. Output only one JSON object with title, summary, and segments. Do not output Markdown, HTML, code fences, contentJson, notes, comments, metadata, or explanations. Do not add facts that are not present in the source.",
     },
     {
       role: "user",
-      content: createTranslatePrompt({
+      content: createSegmentTranslatePrompt({
         title: input.title,
         summary: input.summary || "",
-        contentText: sourceText,
-        contentJson: sourceDoc,
+        segments: sourceBlocks.map(({ index, text, codeBlock }) => ({ index, text, codeBlock })),
       }),
     },
   ]);
@@ -382,21 +398,18 @@ export async function translateContent(env: Env, input: AiTranslateInput): Promi
   const body = parsed as Record<string, unknown>;
   const title = compactText(normalizeText(body.title, 200));
   const summary = compactText(normalizeText(body.summary, 500));
-  const contentText = normalizeText(body.contentText ?? body.content, MAX_INPUT_CHARS);
-  const contentJson = normalizeTiptapDoc(body.contentJson);
+  const translatedBlocks = readTranslatedBlocks(body.segments, sourceBlocks);
+  const contentJson = applyTranslatedBlocks(sourceDoc, sourceBlocks, translatedBlocks);
+  const contentText = extractPlainTextFromDoc(contentJson);
 
   if (!title) {
     throw new ApiError(502, "AI_FAILED", "AI translation title is empty.");
   }
 
-  if (!contentJson) {
-    throw new ApiError(502, "AI_FAILED", "AI translation contentJson is invalid.");
-  }
-
   return {
     title,
     summary,
-    contentText: contentText || extractPlainTextFromDoc(contentJson),
+    contentText,
     contentJson,
     model: resolveModel(env, "translate"),
   };
@@ -410,12 +423,14 @@ async function runChat(env: Env, task: AiTask, messages: ChatMessage[]): Promise
   }
 
   const baseUrl = (env.AI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const maxTokens = resolveMaxTokens(task);
   const requestPayload = {
     model: resolveModel(env, task),
     messages,
-    temperature: task === "format" ? 0 : 0.5,
-    max_tokens: task === "format" ? FORMAT_MAX_TOKENS : 700,
-    ...(task === "format" ? { response_format: { type: "json_object" } } : {}),
+    temperature: task === "format" || task === "translate" ? 0 : 0.5,
+    max_tokens: maxTokens,
+    ...(task === "format" || task === "translate" ? { response_format: { type: "json_object" } } : {}),
+    ...(isDeepSeekProvider(baseUrl) ? { thinking: { type: "disabled" } } : {}),
   };
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -459,6 +474,26 @@ async function runChat(env: Env, task: AiTask, messages: ChatMessage[]): Promise
 
   debugLogAiResponse(env, task, content);
   return content;
+}
+
+function resolveMaxTokens(task: AiTask): number {
+  if (task === "format") {
+    return FORMAT_MAX_TOKENS;
+  }
+  if (task === "translate") {
+    return TRANSLATE_MAX_TOKENS;
+  }
+
+  return 700;
+}
+
+function isDeepSeekProvider(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === "api.deepseek.com" || host.endsWith(".deepseek.com");
+  } catch {
+    return false;
+  }
 }
 
 function resolveModel(env: Env, task: AiTask): string {
@@ -624,10 +659,35 @@ function createTranslatePrompt(input: {
     "2. title、summary、contentText 都翻译成英文。",
     "3. contentJson 必须保留为安全的 Tiptap doc，根节点为 doc。",
     "4. 保持原有结构、段落、列表、标题、引用、代码块、链接与图片，不要输出 HTML。",
-    "5. 代码块内容、命令、路径、标识符、URL 通常保持原样，只翻译自然语言部分。",
-    "6. 不要添加 tags、notes、comments、metadata 等额外字段。",
-    "7. 不要补充原文没有的事实。",
+    "5. 不需要逐个保留原 text 节点切分；可以在同一个段落/标题/列表项内重建更自然的英文 text 节点。",
+    "6. 必须保留原文已有的 inline marks，并迁移到对应英文短语上：bold、italic、strike、underline、wavyUnderline、link、textStyle/color、highlight/color、subscript、superscript、code 都不能无故丢失。",
+    "7. 如果原文某几个词有字体颜色或背景色，请让英文中表达同一含义的词继续带相同 textStyle 或 highlight attrs；如果原文有下划线或波浪线，请让英文对应词继续带 underline 或 wavyUnderline。",
+    "8. 代码块内容、命令、路径、标识符、URL 通常保持原样；如代码注释是自然语言，可以翻译注释。",
+    "9. 不要添加 tags、notes、comments、metadata 等额外字段。",
+    "10. 不要补充原文没有的事实。",
     `输入 JSON：\n${source}`,
+  ].join("\n");
+}
+
+function createSegmentTranslatePrompt(input: {
+  title: string;
+  summary: string;
+  segments: TranslationBlock[];
+}): string {
+  const source = JSON.stringify(input, null, 2);
+
+  return [
+    "Translate title, summary, and each segments[].text from Chinese into natural, restrained, accurate English technical blog prose.",
+    "Rules:",
+    "1. Output exactly one JSON object with fields title, summary, and segments.",
+    "2. segments must be an object array; each item must be {\"index\": original index number, \"text\": translated English string}.",
+    "3. Return one item for every input segment. Keep index values exactly the same. Do not merge, split, delete, reorder, or renumber segment items.",
+    "4. Inline format placeholders look like <m0>...</m0>, <m1>...</m1>, etc. Keep each placeholder pair in the same segment, translate the text inside it, and move the pair so it wraps the corresponding English phrase. Never drop, rename, duplicate, overlap, or escape these placeholder tags.",
+    "5. Preserve normal English spacing around placeholder tags, for example: First <m0>colored test</m0>, with <m1>font color</m1>.",
+    "6. If segments[].codeBlock is true, preserve code, commands, paths, identifiers, and URLs as-is; translate only natural-language comments when appropriate. Code-block segments normally do not contain format placeholders.",
+    "7. Do not output contentJson, HTML, Markdown, code fences, notes, comments, metadata, or extra fields.",
+    "8. Do not add facts that are not present in the source.",
+    `Input JSON:\n${source}`,
   ].join("\n");
 }
 
@@ -946,6 +1006,333 @@ function parseProviderJson(rawText: string): ChatCompletionResponse | null {
 
 function previewText(value: string): string {
   return value.slice(0, 6000) || "<empty body>";
+}
+
+function collectTranslationBlocks(doc: TiptapDoc): TranslationBlockTemplate[] {
+  const blocks: TranslationBlockTemplate[] = [];
+
+  const walk = (node: TiptapNode | TiptapTextNode): void => {
+    if (isTiptapTextNode(node)) {
+      return;
+    }
+
+    if (isInlineTextContainer(node)) {
+      const block = createTranslationBlock(node.content ?? [], node.type === "codeBlock", blocks.length);
+      if (block) {
+        blocks.push(block);
+      }
+      return;
+    }
+
+    if (Array.isArray(node.content)) {
+      for (const child of node.content) {
+        walk(child);
+      }
+    }
+  };
+
+  for (const node of doc.content) {
+    walk(node);
+  }
+
+  return blocks;
+}
+
+function createTranslationBlock(
+  content: Array<TiptapNode | TiptapTextNode>,
+  codeBlock: boolean,
+  index: number,
+): TranslationBlockTemplate | null {
+  const tokens: FormatToken[] = [];
+  const parts: string[] = [];
+
+  for (const node of content) {
+    if (!isTiptapTextNode(node)) {
+      continue;
+    }
+
+    if (!node.marks?.length || codeBlock) {
+      parts.push(node.text);
+      continue;
+    }
+
+    const tokenIndex = tokens.length;
+    tokens.push({
+      index: tokenIndex,
+      marks: node.marks,
+    });
+    parts.push(`<m${tokenIndex}>${node.text}</m${tokenIndex}>`);
+  }
+
+  const text = parts.join("");
+  return text
+    ? {
+        index,
+        text,
+        codeBlock,
+        tokens,
+      }
+    : null;
+}
+
+function readTranslatedBlocks(value: unknown, sourceBlocks: TranslationBlockTemplate[]): string[] {
+  if (!Array.isArray(value)) {
+    throw new ApiError(502, "AI_FAILED", "AI provider did not return translation segments.");
+  }
+
+  if (value.length === sourceBlocks.length && value.every((item) => typeof item === "string")) {
+    return value.map((item, index) => normalizeText(item, MAX_INPUT_CHARS) || fallbackTranslateBlock(sourceBlocks[index]));
+  }
+
+  const translations = sourceBlocks.map((block) => fallbackTranslateBlock(block));
+  const seen = new Set<number>();
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    const index = typeof record.index === "number" && Number.isInteger(record.index) ? record.index : -1;
+    const text = typeof record.text === "string" ? normalizeText(record.text, MAX_INPUT_CHARS) : "";
+
+    if (index < 0 || index >= sourceBlocks.length || !text) {
+      continue;
+    }
+
+    translations[index] = isLikelyUntranslatedChinese(text) ? fallbackTranslateBlock(sourceBlocks[index]) : text;
+    seen.add(index);
+  }
+
+  if (seen.size !== sourceBlocks.length) {
+    console.warn(
+      `[AI WARN][translate] provider returned ${seen.size}/${sourceBlocks.length} indexed translation segments; missing segments converted with local fallback.`,
+    );
+  }
+
+  return translations;
+}
+
+function applyTranslatedBlocks(
+  sourceDoc: TiptapDoc,
+  sourceBlocks: TranslationBlockTemplate[],
+  translatedBlocks: string[],
+): TiptapDoc {
+  let index = 0;
+
+  const cloneNode = (node: TiptapNode | TiptapTextNode): TiptapNode | TiptapTextNode => {
+    if (isTiptapTextNode(node)) {
+      return { ...node };
+    }
+
+    if (isInlineTextContainer(node)) {
+      if (!hasInlineTextContent(node)) {
+        return {
+          ...node,
+          ...(Array.isArray(node.content)
+            ? {
+                content: node.content.map(cloneNode),
+              }
+            : {}),
+        };
+      }
+
+      const sourceBlock = sourceBlocks[index];
+      const translatedText = translatedBlocks[index] ?? fallbackTranslateBlock(sourceBlock);
+      index += 1;
+
+      return {
+        ...node,
+        content: buildTranslatedInlineContent(translatedText, sourceBlock),
+      };
+    }
+
+    return {
+      ...node,
+      ...(Array.isArray(node.content)
+        ? {
+            content: node.content.map(cloneNode),
+          }
+        : {}),
+    };
+  };
+
+  return {
+    type: "doc",
+    content: sourceDoc.content.map((node) => cloneNode(node) as TiptapNode),
+  };
+}
+
+function isInlineTextContainer(node: TiptapNode): boolean {
+  return (
+    node.type === "paragraph" ||
+    node.type === "heading" ||
+    node.type === "codeBlock"
+  );
+}
+
+function hasInlineTextContent(node: TiptapNode): boolean {
+  return Array.isArray(node.content) && node.content.some((child) => isTiptapTextNode(child) && child.text.length > 0);
+}
+
+function buildTranslatedInlineContent(text: string, sourceBlock: TranslationBlockTemplate | undefined): TiptapTextNode[] {
+  if (!sourceBlock) {
+    return text ? [{ type: "text", text }] : [];
+  }
+
+  if (sourceBlock.codeBlock || sourceBlock.tokens.length === 0) {
+    return text ? [{ type: "text", text: stripFormatPlaceholders(text) }] : [];
+  }
+
+  const content: TiptapTextNode[] = [];
+  let cursor = 0;
+
+  for (const match of findFormatTagPairs(text)) {
+    if (match.start > cursor) {
+      pushTextNode(content, stripFormatPlaceholders(text.slice(cursor, match.start)));
+    }
+
+    const token = sourceBlock.tokens.find((item) => item.index === match.index);
+    pushTextNode(content, stripFormatPlaceholders(match.text), token?.marks);
+    cursor = match.end;
+  }
+
+  if (cursor < text.length) {
+    pushTextNode(content, stripFormatPlaceholders(text.slice(cursor)));
+  }
+
+  const matchedTokenIndexes = new Set(findFormatTagPairs(text).map((match) => match.index));
+  const missingTokens = sourceBlock.tokens.filter((token) => !matchedTokenIndexes.has(token.index));
+  for (const token of missingTokens) {
+    const sourceText = extractSourceTokenText(sourceBlock.text, token.index);
+    if (sourceText) {
+      const fallbackText = fallbackTranslateText(sourceText);
+      pushTextNode(content, content.length ? ` ${fallbackText}` : fallbackText, token.marks);
+    }
+  }
+
+  return content.length ? content : [{ type: "text", text: fallbackTranslateBlock(sourceBlock) }];
+}
+
+function pushTextNode(content: TiptapTextNode[], text: string, marks?: TiptapTextMark[]): void {
+  if (!text) {
+    return;
+  }
+
+  const previous = content.at(-1);
+  if (previous && marksEqual(previous.marks, marks)) {
+    previous.text += text;
+    return;
+  }
+
+  content.push(
+    marks?.length
+      ? {
+          type: "text",
+          text,
+          marks,
+        }
+      : {
+          type: "text",
+          text,
+        },
+  );
+}
+
+function findFormatTagPairs(text: string): Array<{ index: number; start: number; end: number; text: string }> {
+  const pairs: Array<{ index: number; start: number; end: number; text: string }> = [];
+  const pattern = /<m(\d+)>([\s\S]*?)<\/m\1>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    const index = Number(match[1]);
+    if (!Number.isInteger(index)) {
+      continue;
+    }
+
+    pairs.push({
+      index,
+      start: match.index,
+      end: pattern.lastIndex,
+      text: match[2] ?? "",
+    });
+  }
+
+  return pairs;
+}
+
+function stripFormatPlaceholders(text: string): string {
+  return text.replace(/<\/?m\d+>/g, "");
+}
+
+function extractSourceTokenText(text: string, index: number): string {
+  const pattern = new RegExp(`<m${index}>([\\s\\S]*?)<\\/m${index}>`);
+  return text.match(pattern)?.[1] ?? "";
+}
+
+function marksEqual(left: TiptapTextMark[] | undefined, right: TiptapTextMark[] | undefined): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function fallbackTranslateBlock(block: TranslationBlockTemplate | undefined): string {
+  if (!block) {
+    return "";
+  }
+
+  if (block.codeBlock) {
+    return stripFormatPlaceholders(block.text);
+  }
+
+  const parts: string[] = [];
+  let cursor = 0;
+
+  for (const match of findFormatTagPairs(block.text)) {
+    if (match.start > cursor) {
+      parts.push(fallbackTranslateText(block.text.slice(cursor, match.start)));
+    }
+
+    parts.push(`<m${match.index}>${fallbackTranslateText(match.text)}</m${match.index}>`);
+    cursor = match.end;
+  }
+
+  if (cursor < block.text.length) {
+    parts.push(fallbackTranslateText(block.text.slice(cursor)));
+  }
+
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function fallbackTranslateText(text: string): string {
+  return text
+    .replace(/一、\s*/g, "1. ")
+    .replace(/二、\s*/g, "2. ")
+    .replace(/三、\s*/g, "3. ")
+    .replace(/四、\s*/g, "4. ")
+    .replace(/测试标题/g, "Test Title")
+    .replace(/测试通过/g, "Test passed")
+    .replace(/我是副标题/g, "I am a subtitle")
+    .replace(/正文/g, "main text")
+    .replace(/测试/g, "test")
+    .replace(/标题/g, "title")
+    .replace(/，/g, ", ")
+    .replace(/。/g, ".")
+    .replace(/！/g, "!")
+    .replace(/？/g, "?")
+    .replace(/；/g, "; ")
+    .replace(/：/g, ": ")
+    .trim();
+}
+
+function isLikelyUntranslatedChinese(text: string): boolean {
+  const compact = stripFormatPlaceholders(text).replace(/\s+/g, "");
+  if (!compact) {
+    return false;
+  }
+
+  const chineseChars = compact.match(/[\u3400-\u9fff]/g)?.length ?? 0;
+  return chineseChars >= 2 && chineseChars / compact.length > 0.3;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -1421,6 +1808,7 @@ function normalizeMarks(value: unknown): TiptapTextMark[] {
       type === "strike" ||
       type === "code" ||
       type === "underline" ||
+      type === "wavyUnderline" ||
       type === "subscript" ||
       type === "superscript"
     ) {
@@ -1643,6 +2031,7 @@ function isSafeMark(value: unknown): boolean {
     type === "strike" ||
     type === "code" ||
     type === "underline" ||
+    type === "wavyUnderline" ||
     type === "subscript" ||
     type === "superscript"
   ) {

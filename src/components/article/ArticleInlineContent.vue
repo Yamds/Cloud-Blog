@@ -84,10 +84,12 @@ function normalizeSegments(): ArticleInlineSegment[] {
   text-underline-offset: 3px;
 }
 .inline-content .wavy {
-  text-decoration: underline wavy;
+  display: inline;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
   text-decoration-color: var(--accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
+  text-decoration-thickness: 1.25px;
+  text-underline-offset: 0.16em;
 }
 .inline-content .inline-highlight {
   border-radius: 3px;

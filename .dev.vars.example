@@ -24,6 +24,7 @@ AI_MODEL_SUMMARY=deepseek-v4-flash
 AI_MODEL_FORMAT=deepseek-v4-flash
 AI_MODEL_POLISH=deepseek-v4-flash
 AI_MODEL_TAGS=deepseek-v4-flash
+AI_MODEL_TRANSLATE=deepseek-v4-flash
 AI_ALLOW_UNAUTHENTICATED_DEV=false
 AI_DEBUG_LOG_RESPONSE=false
 
