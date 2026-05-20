@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { storeToRefs } from "pinia";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "@/i18n/useI18n";
+import { useLanguageStore } from "@/stores/language";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleCard from "../../components/article/ArticleCard.vue";
 import IconifyIcon from "../../components/common/IconifyIcon.vue";
 import type { Article } from "../../types/article";
 
 const { t } = useI18n();
+const languageStore = useLanguageStore();
+const { locale } = storeToRefs(languageStore);
 const heroRef = ref<HTMLElement | null>(null);
 const articleListRef = ref<HTMLElement | null>(null);
 const prefersReducedMotion = ref(false);
@@ -117,7 +121,7 @@ const loadArticles = async () => {
   articlesLoadError.value = "";
 
   try {
-    articles.value = await getPublishedArticles();
+    articles.value = await getPublishedArticles(locale.value);
   } catch (error) {
     articles.value = [];
     articlesLoadError.value =
@@ -132,6 +136,10 @@ onMounted(() => {
   prefersReducedMotion.value = motionQuery.matches;
   motionQuery.addEventListener("change", handleMotionChange);
   window.addEventListener("wheel", handleWheel, { passive: false });
+  void loadArticles();
+});
+
+watch(locale, () => {
   void loadArticles();
 });
 

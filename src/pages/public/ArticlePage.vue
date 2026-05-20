@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import { recordPageView } from "@/api/analytics";
 import { useI18n } from "@/i18n/useI18n";
 import { getSiteSettings } from "@/api/settings";
@@ -22,9 +22,12 @@ import { useLanguageStore } from "@/stores/language";
 import { createArticleHeadingId, getArticleBlockText } from "@/utils/articleContent";
 
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
 const authStore = useAuthStore();
+const languageStore = useLanguageStore();
 const { isAdmin, isAuthenticated, isLoading: isAuthLoading, user } = storeToRefs(authStore);
+const { locale } = storeToRefs(languageStore);
 const article = ref<Article>();
 const comments = ref<ArticleComment[]>([]);
 const isLoadingArticle = ref(true);
@@ -41,6 +44,7 @@ const lastRecordedPageViewSlug = ref("");
 const OUTLINE_SCROLL_EXTRA_GAP = 24;
 const SITE_TITLE = "Yamds's Blog";
 const slug = computed(() => String(route.params.slug ?? ""));
+const currentArticleLanguage = computed(() => (article.value?.language === "en" ? "en" : "zh"));
 const currentUserId = computed(() => user.value?.id ?? null);
 const currentUserName = computed(() => user.value?.githubLogin ?? "");
 const outlineItems = computed(() =>
@@ -229,6 +233,20 @@ function scrollToOutlineItem(id: string): void {
   activeHeadingId.value = id;
 }
 
+function getTranslationSlugForLocale(targetLocale: "zh" | "en"): string {
+  const currentArticle = article.value;
+
+  if (!currentArticle || currentArticleLanguage.value === targetLocale) {
+    return "";
+  }
+
+  const translation = currentArticle.translations?.find(
+    (item) => item.language === targetLocale && item.status !== "archived",
+  );
+
+  return translation?.slug ?? "";
+}
+
 watch(
   slug,
   (currentSlug) => {
@@ -236,6 +254,14 @@ watch(
   },
   { immediate: true },
 );
+
+watch(locale, (nextLocale) => {
+  const targetSlug = getTranslationSlugForLocale(nextLocale);
+
+  if (targetSlug && targetSlug !== slug.value) {
+    void router.replace(`/articles/${encodeURIComponent(targetSlug)}`);
+  }
+});
 
 watch(article, () => {
   document.title = article.value ? `${article.value.title} - ${SITE_TITLE}` : SITE_TITLE;

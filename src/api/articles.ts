@@ -8,6 +8,7 @@ import type {
   ArticleInlineSegment,
   ArticleListItem,
 } from "../types/article";
+import type { AppLocale } from "../stores/language";
 
 type JsonRecord = Record<string, unknown>;
 type PublicArticlesResponse = ArticlePayload[] | { articles?: ArticlePayload[]; data?: ArticlePayload[] };
@@ -711,17 +712,70 @@ const unwrapArticle = (payload: PublicArticleResponse) => {
   return payload;
 };
 
-export async function getPublishedArticles(language?: "zh" | "en"): Promise<Article[]> {
+const normalizeArticleLocale = (value: unknown): AppLocale => (value === "en" ? "en" : "zh");
+
+const getArticleGroupKey = (article: Article): string =>
+  article.translationGroupId || article.id || article.slug;
+
+const getArticleSortTime = (article: Article): number => {
+  const timestamp = Date.parse(article.publishedAt || article.updatedAt || article.createdAt || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const newerArticle = (current: Article | undefined, next: Article): Article =>
+  !current || getArticleSortTime(next) > getArticleSortTime(current) ? next : current;
+
+function selectArticlesForLocale(articles: Article[], language?: AppLocale): Article[] {
+  if (!language) {
+    return articles;
+  }
+
+  const groups = new Map<
+    string,
+    {
+      zh?: Article;
+      en?: Article;
+      first: Article;
+    }
+  >();
+
+  for (const article of articles) {
+    const key = getArticleGroupKey(article);
+    const group = groups.get(key) ?? { first: article };
+    const articleLocale = normalizeArticleLocale(article.language);
+
+    if (articleLocale === "en") {
+      group.en = newerArticle(group.en, article);
+    } else {
+      group.zh = newerArticle(group.zh, article);
+    }
+
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group): Article | undefined => {
+      if (language === "en") {
+        return group.en ?? group.zh ?? group.first;
+      }
+
+      return group.zh;
+    })
+    .filter((article): article is Article => article !== undefined)
+    .sort((left, right) => getArticleSortTime(right) - getArticleSortTime(left));
+}
+
+export async function getPublishedArticles(language?: AppLocale): Promise<Article[]> {
   try {
     const payload = await requestJson<PublicArticlesResponse>("/api/articles");
     const articles = unwrapArticleList(payload)
       .map((item) => normalizeArticle(item))
       .filter((item): item is Article => item !== null);
 
-    return language ? articles.filter((article) => (article.language ?? "zh") === language) : articles;
+    return selectArticlesForLocale(articles, language);
   } catch (error) {
     if (isMockFallbackError(error)) {
-      return mockArticles;
+      return selectArticlesForLocale(mockArticles, language);
     }
 
     throw error;

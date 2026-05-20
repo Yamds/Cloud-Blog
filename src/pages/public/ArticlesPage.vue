@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { storeToRefs } from "pinia";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { useI18n } from "@/i18n/useI18n";
+import { useLanguageStore } from "@/stores/language";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleMasonryCard from "../../components/article/ArticleMasonryCard.vue";
 import type { Article } from "../../types/article";
 
 const { t } = useI18n();
+const languageStore = useLanguageStore();
+const { locale } = storeToRefs(languageStore);
 const route = useRoute();
 const articles = ref<Article[]>([]);
 const isLoadingArticles = ref(true);
@@ -43,7 +47,7 @@ const loadArticles = async () => {
   articlesLoadError.value = "";
 
   try {
-    articles.value = await getPublishedArticles();
+    articles.value = await getPublishedArticles(locale.value);
   } catch (error) {
     articles.value = [];
     articlesLoadError.value =
@@ -54,6 +58,10 @@ const loadArticles = async () => {
 };
 
 onMounted(() => {
+  void loadArticles();
+});
+
+watch(locale, () => {
   void loadArticles();
 });
 </script>

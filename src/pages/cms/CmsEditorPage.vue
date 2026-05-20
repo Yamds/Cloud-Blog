@@ -1060,7 +1060,7 @@ function updateStatus(status: CmsArticleStatus): void {
 
 function hasEnglishContent(): boolean {
   const english = localizedDrafts.en;
-  return Boolean(english.title.trim() || english.summary.trim() || english.content.trim());
+  return Boolean(english.title.trim() && english.content.trim());
 }
 
 function getSavePayload(locale: CmsArticleLanguage) {
