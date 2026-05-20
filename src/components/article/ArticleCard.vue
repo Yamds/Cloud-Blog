@@ -112,7 +112,7 @@ const getTagRoute = (tag: string) => `/tags/${encodeURIComponent(tag)}`;
 }
 
 .article-title {
-  font-family: "LXGW WenKai", serif;
+  font-family: var(--font-body);
   font-size: 28px;
   font-weight: 500;
   color: var(--text-primary);

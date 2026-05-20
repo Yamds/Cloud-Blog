@@ -1,7 +1,7 @@
 @font-face {
   font-family: "LXGW WenKai";
   src: url("/fonts/LXGWWenKai-Regular.woff2") format("woff2");
-  font-weight: 400;
+  font-weight: 300 700;
   font-style: normal;
   font-display: swap;
 }
@@ -218,7 +218,7 @@
   --font-body: "LXGW WenKai", serif;
   --font-heading: "Cormorant Garamond", serif;
   --font-mono: "Maple Mono NR", "Maple Mono NR NF CN", "Maple Mono NF CN", "Maple Mono CN", monospace;
-  --font-article: var(--font-mono);
+  --font-article: "Maple Mono NR NF CN", "Maple Mono NF CN", "Maple Mono CN", "LXGW WenKai", var(--font-mono);
 }
 
 body {

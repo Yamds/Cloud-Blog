@@ -262,7 +262,7 @@ watch(
 }
 
 .logo {
-  font-family: "Cormorant Garamond", serif;
+  font-family: var(--font-heading);
   font-size: 1.4rem;
   letter-spacing: 0;
   color: var(--text-primary);
