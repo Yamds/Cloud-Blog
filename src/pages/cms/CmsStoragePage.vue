@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ApiError, isApiError } from "@/api/http";
-import { deleteCmsMediaObject, getCmsMediaObjects } from "@/api/media";
+import { deleteCmsMediaObject, generateCmsMediaWebpVariants, getCmsMediaObjects } from "@/api/media";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import StorageFilters from "@/components/cms/StorageFilters.vue";
 import StorageObjectsTable from "@/components/cms/StorageObjectsTable.vue";
@@ -27,6 +27,7 @@ type MessageState =
 const storageObjects = ref<CmsStorageObject[]>([]);
 const loading = ref(true);
 const deletePendingId = ref<string | null>(null);
+const webpPendingId = ref<string | null>(null);
 const { locale, t } = useI18n();
 const actionMessage = ref<MessageState>({ key: "cms.storage.loadingInitial" });
 const actionMessageText = computed(() => {
@@ -130,6 +131,9 @@ const filteredObjects = computed(() => {
 const filteredBytes = computed(() =>
   filteredObjects.value.reduce((sum, item) => sum + item.sizeBytes, 0),
 );
+const webpCandidates = computed(() =>
+  storageObjects.value.filter((item) => canGenerateWebp(item) && hasMissingOrErrorWebp(item)),
+);
 
 function buildErrorMessage(error: unknown): string {
   return isApiError(error) ? error.message : t("cms.storage.requestFailed");
@@ -189,6 +193,15 @@ function getDisplayName(item: CmsStorageObject): string {
 
 function getPublicMediaUrl(item: CmsStorageObject): string {
   return item.previewUrl || `/api/cms/media/${encodeURIComponent(getDisplayName(item))}`;
+}
+
+function canGenerateWebp(item: CmsStorageObject): boolean {
+  return item.type === "image" && (item.mime === "image/jpeg" || item.mime === "image/png");
+}
+
+function hasMissingOrErrorWebp(item: CmsStorageObject): boolean {
+  const variants = item.variants ?? [];
+  return variants.length < 2 || variants.some((variant) => variant.status !== "ready");
 }
 
 async function loadStorageData(options: { silent?: boolean } = {}): Promise<void> {
@@ -288,6 +301,73 @@ async function handleRemove(item: CmsStorageObject): Promise<void> {
   }
 }
 
+async function handleGenerateWebp(item: CmsStorageObject): Promise<void> {
+  const displayName = getDisplayName(item);
+  actionMessage.value = { key: "cms.storage.webpGenerating", params: { name: displayName } };
+  webpPendingId.value = item.id;
+
+  try {
+    const result = await generateCmsMediaWebpVariants(item.id);
+    storageObjects.value = storageObjects.value.map((current) =>
+      current.id === item.id
+        ? {
+            ...current,
+            variants: result.variants,
+          }
+        : current,
+    );
+    actionMessage.value = { key: "cms.storage.webpGenerated", params: { name: displayName } };
+  } catch (error) {
+    actionMessage.value = {
+      key: "cms.storage.webpGenerateFailed",
+      params: { message: buildErrorMessage(error) },
+    };
+  } finally {
+    webpPendingId.value = null;
+  }
+}
+
+async function handleGenerateAllWebp(): Promise<void> {
+  const candidates = webpCandidates.value;
+
+  if (candidates.length === 0 || webpPendingId.value) {
+    return;
+  }
+
+  actionMessage.value = {
+    key: "cms.storage.webpGeneratingAll",
+    params: { count: candidates.length },
+  };
+  webpPendingId.value = "bulk";
+  let successCount = 0;
+
+  for (const item of candidates) {
+    try {
+      const result = await generateCmsMediaWebpVariants(item.id);
+      storageObjects.value = storageObjects.value.map((current) =>
+        current.id === item.id
+          ? {
+              ...current,
+              variants: result.variants,
+            }
+          : current,
+      );
+      successCount += 1;
+    } catch (error) {
+      actionMessage.value = {
+        key: "cms.storage.webpGenerateFailed",
+        params: { message: buildErrorMessage(error) },
+      };
+    }
+  }
+
+  webpPendingId.value = null;
+  actionMessage.value = {
+    key: "cms.storage.webpGeneratedAll",
+    params: { count: successCount },
+  };
+}
+
 onMounted(() => {
   void loadStorageData();
 });
@@ -301,6 +381,20 @@ onMounted(() => {
     <p v-if="deletePendingId" class="status-line status-line--active">
       {{ t("cms.storage.deletePending") }}
     </p>
+    <p v-if="webpPendingId" class="status-line status-line--active">
+      {{ t("cms.storage.webpPending") }}
+    </p>
+
+    <div class="storage-actions">
+      <button
+        type="button"
+        class="text-action"
+        :disabled="webpCandidates.length === 0 || Boolean(webpPendingId)"
+        @click="handleGenerateAllWebp"
+      >
+        {{ t("cms.storage.generateAllWebp", { count: webpCandidates.length }) }}
+      </button>
+    </div>
 
     <StorageOverview
       :summary="storageSummaryState"
@@ -316,6 +410,7 @@ onMounted(() => {
           :view-mode="filters.viewMode"
           @preview="handlePreview"
           @copy="handleCopy"
+          @generate-webp="handleGenerateWebp"
           @remove="handleRemove"
         />
       </div>
@@ -346,6 +441,36 @@ onMounted(() => {
 .storage-workspace {
   display: grid;
   gap: var(--space-4);
+}
+
+.storage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+}
+
+.text-action {
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 5px;
+}
+
+.text-action:hover:enabled,
+.text-action:focus-visible {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.text-action:disabled {
+  cursor: not-allowed;
+  color: var(--text-tertiary);
 }
 
 .main-column {

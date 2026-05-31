@@ -12,6 +12,7 @@ defineProps<{
 const emit = defineEmits<{
   preview: [item: CmsStorageObject];
   copy: [item: CmsStorageObject];
+  generateWebp: [item: CmsStorageObject];
   remove: [item: CmsStorageObject];
 }>();
 
@@ -68,6 +69,24 @@ function getDisplayName(item: CmsStorageObject): string {
   return item.filename || item.key.split("/").filter(Boolean).pop() || item.key;
 }
 
+function canGenerateWebp(item: CmsStorageObject): boolean {
+  return item.type === "image" && (item.mime === "image/jpeg" || item.mime === "image/png");
+}
+
+function getVariantSummary(item: CmsStorageObject): string {
+  const variants = item.variants ?? [];
+  const readyCount = variants.filter((variant) => variant.status === "ready").length;
+
+  if (!canGenerateWebp(item)) {
+    return t("cms.storage.table.webpUnsupported");
+  }
+
+  return t("cms.storage.table.webpSummary", {
+    ready: readyCount,
+    total: 2,
+  });
+}
+
 function formatDateTime(value: string): string {
   const date = new Date(value);
 
@@ -102,6 +121,7 @@ function formatDateTime(value: string): string {
         <span>{{ t("cms.storage.table.filename") }}</span>
         <span>{{ t("cms.storage.table.typeStatus") }}</span>
         <span>{{ t("cms.storage.table.size") }}</span>
+        <span>{{ t("cms.storage.table.webp") }}</span>
         <span>{{ t("cms.storage.table.relatedArticle") }}</span>
         <span>{{ t("cms.storage.table.updatedAt") }}</span>
         <span>{{ t("cms.shared.actions") }}</span>
@@ -139,6 +159,8 @@ function formatDateTime(value: string): string {
 
         <p class="mono">{{ formatBytes(item.sizeBytes) }}</p>
 
+        <p class="webp-cell" :class="{ muted: !canGenerateWebp(item) }">{{ getVariantSummary(item) }}</p>
+
         <div class="article-cell">
           <template v-if="item.relatedArticle">
             <p class="article-title">{{ item.relatedArticle.articleTitle }}</p>
@@ -157,6 +179,14 @@ function formatDateTime(value: string): string {
           </button>
           <button type="button" :title="t('cms.storage.table.copyPath')" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
+          </button>
+          <button
+            v-if="canGenerateWebp(item)"
+            type="button"
+            :title="t('cms.storage.table.generateWebp')"
+            @click="emit('generateWebp', item)"
+          >
+            <IconifyIcon icon="ph:file-image" :size="16" />
           </button>
           <button type="button" :title="t('cms.storage.table.remove')" @click="emit('remove', item)">
             <IconifyIcon icon="ph:trash" :size="16" />
@@ -194,6 +224,7 @@ function formatDateTime(value: string): string {
 
           <p class="object-key card-key">{{ getDisplayName(item) }}</p>
           <p class="object-meta">{{ item.mime }} · {{ formatBytes(item.sizeBytes) }}</p>
+          <p class="object-meta">{{ getVariantSummary(item) }}</p>
           <p class="article-line">
             {{ item.relatedArticle ? item.relatedArticle.articleTitle : t("cms.storage.table.noRelatedArticle") }}
           </p>
@@ -213,6 +244,14 @@ function formatDateTime(value: string): string {
           </button>
           <button type="button" :title="t('cms.storage.table.copyPath')" @click="emit('copy', item)">
             <IconifyIcon icon="ph:copy" :size="16" />
+          </button>
+          <button
+            v-if="canGenerateWebp(item)"
+            type="button"
+            :title="t('cms.storage.table.generateWebp')"
+            @click="emit('generateWebp', item)"
+          >
+            <IconifyIcon icon="ph:file-image" :size="16" />
           </button>
           <button type="button" :title="t('cms.storage.table.remove')" @click="emit('remove', item)">
             <IconifyIcon icon="ph:trash" :size="16" />
@@ -243,7 +282,7 @@ function formatDateTime(value: string): string {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 92px minmax(220px, 1.9fr) minmax(160px, 1.2fr) 96px minmax(180px, 1.3fr) 130px 110px;
+  grid-template-columns: 92px minmax(220px, 1.8fr) minmax(160px, 1.1fr) 96px 104px minmax(180px, 1.2fr) 130px 118px;
   gap: var(--space-2);
   align-items: center;
   padding: 18px var(--space-3);
@@ -352,8 +391,13 @@ function formatDateTime(value: string): string {
 }
 
 .article-title,
-.article-line {
+.article-line,
+.webp-cell {
   font-size: 14px;
+}
+
+.webp-cell.muted {
+  color: var(--text-tertiary);
 }
 
 .relation-badge {
@@ -458,7 +502,7 @@ function formatDateTime(value: string): string {
 @media (max-width: 1180px) {
   .table-head,
   .table-row {
-    grid-template-columns: 84px minmax(220px, 1.8fr) minmax(140px, 1.1fr) 90px minmax(160px, 1fr) 112px 104px;
+    grid-template-columns: 84px minmax(220px, 1.8fr) minmax(140px, 1.1fr) 90px 100px minmax(160px, 1fr) 112px 104px;
   }
 }
 
@@ -477,7 +521,8 @@ function formatDateTime(value: string): string {
   .table-row > :nth-child(4),
   .table-row > :nth-child(5),
   .table-row > :nth-child(6),
-  .table-row > :nth-child(7) {
+  .table-row > :nth-child(7),
+  .table-row > :nth-child(8) {
     grid-column: 2;
   }
 

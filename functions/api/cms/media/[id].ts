@@ -7,8 +7,10 @@ import {
   findMediaUsageReferences,
   getStoredMediaObjectByPublicName,
   getStoredMediaObject,
+  getStoredMediaVariant,
   requireBucket,
   buildMediaUrl,
+  readMediaVariantParam,
   type StorageEnv,
 } from "../../../_shared/uploads";
 
@@ -23,7 +25,7 @@ function readMediaParam(params: EventContext<Env, string, unknown>["params"]): s
   return id;
 }
 
-export const onRequestGet: PagesFunction<StorageEnv> = async ({ env, params }) =>
+export const onRequestGet: PagesFunction<StorageEnv> = async ({ request, env, params }) =>
   handleRequest(async () => {
     const db = requireDb(env);
     const rawParam = readMediaParam(params);
@@ -35,27 +37,27 @@ export const onRequestGet: PagesFunction<StorageEnv> = async ({ env, params }) =
       throw new ApiError(404, "NOT_FOUND", "Media object not found.");
     }
 
-    const object = await requireBucket(env).get(media.objectKey);
+    const variant = readMediaVariantParam(request);
+    const storedVariant = variant ? await getStoredMediaVariant(db, media.id, variant) : null;
+    const objectKey = storedVariant?.status === "ready" ? storedVariant.objectKey : media.objectKey;
+    const mimeType = storedVariant?.status === "ready" ? storedVariant.mimeType : media.mimeType;
+    const object = await requireBucket(env).get(objectKey);
 
     if (!object) {
-      throw new ApiError(404, "NOT_FOUND", "Stored object not found.");
+      if (!variant || objectKey === media.objectKey) {
+        throw new ApiError(404, "NOT_FOUND", "Stored object not found.");
+      }
+
+      const fallbackObject = await requireBucket(env).get(media.objectKey);
+
+      if (!fallbackObject) {
+        throw new ApiError(404, "NOT_FOUND", "Stored object not found.");
+      }
+
+      return buildObjectResponse(fallbackObject, media.mimeType);
     }
 
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set("etag", object.httpEtag);
-
-    if (!headers.has("content-type")) {
-      headers.set("content-type", media.mimeType);
-    }
-
-    if (!headers.has("cache-control")) {
-      headers.set("cache-control", "public, max-age=31536000, immutable");
-    }
-
-    return new Response(object.body, {
-      headers,
-    });
+    return buildObjectResponse(object, mimeType);
   });
 
 export const onRequestDelete: PagesFunction<StorageEnv> = async ({ request, env, params }) =>
@@ -110,6 +112,24 @@ export const onRequestDelete: PagesFunction<StorageEnv> = async ({ request, env,
       media: deletedMedia,
     });
   });
+
+function buildObjectResponse(object: R2ObjectBody, fallbackMimeType: string): Response {
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", object.httpEtag);
+
+    if (!headers.has("content-type")) {
+      headers.set("content-type", fallbackMimeType);
+    }
+
+    if (!headers.has("cache-control")) {
+      headers.set("cache-control", "public, max-age=31536000, immutable");
+    }
+
+    return new Response(object.body, {
+      headers,
+    });
+}
 
 function readForceFlag(request: Request): boolean {
   const url = new URL(request.url);

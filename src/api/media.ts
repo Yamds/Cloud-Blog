@@ -1,5 +1,5 @@
 import { requestJson } from "@/api/http";
-import type { CmsDeleteMediaResponse, CmsStorageObject } from "@/types/cms";
+import type { CmsDeleteMediaResponse, CmsStorageObject, CmsStorageObjectVariant } from "@/types/cms";
 
 interface CmsMediaObjectsResponse {
   objects: CmsStorageObject[];
@@ -17,5 +17,14 @@ export function deleteCmsMediaObject(
 
   return requestJson<CmsDeleteMediaResponse>(`/api/cms/media/${encodeURIComponent(id)}${search}`, {
     method: "DELETE",
+  });
+}
+
+export function generateCmsMediaWebpVariants(id: string): Promise<{
+  mediaId: string;
+  variants: CmsStorageObjectVariant[];
+}> {
+  return requestJson(`/api/cms/media/${encodeURIComponent(id)}/variants`, {
+    method: "POST",
   });
 }

@@ -1,5 +1,6 @@
 export interface Env {
   DB?: D1Database;
+  IMAGES?: ImagesBinding;
   ADMIN_GITHUB_IDS?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;

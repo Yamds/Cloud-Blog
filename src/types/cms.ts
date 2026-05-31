@@ -179,7 +179,19 @@ export interface CmsStorageObject {
   updatedAt: string;
   status: CmsStorageObjectStatus;
   previewUrl?: string;
+  variants?: CmsStorageObjectVariant[];
   relatedArticle?: CmsStorageArticleLink | null;
+}
+
+export interface CmsStorageObjectVariant {
+  variant: "webp_1080" | "webp_720";
+  width: number;
+  height: number | null;
+  sizeBytes: number;
+  status: "ready" | "missing" | "error";
+  url: string;
+  updatedAt: string | null;
+  errorMessage?: string;
 }
 
 export interface CmsDeleteMediaConflictDetails {
@@ -247,6 +259,7 @@ export interface CmsImageUploadResult {
   id: string;
   objectKey: string;
   url: string;
+  variants?: CmsStorageObjectVariant[];
 }
 
 export interface CmsComment {

@@ -6,6 +6,8 @@ export interface StorageEnv extends Env {
   BUCKET?: R2Bucket;
 }
 
+export type MediaWebpVariantKey = "webp_1080" | "webp_720";
+
 export interface UploadImageRequest {
   articleId: string | null;
   file?: File;
@@ -16,6 +18,7 @@ export interface UploadedImagePayload {
   id: string;
   objectKey: string;
   url: string;
+  variants: MediaObjectVariantPayload[];
 }
 
 export interface CmsMediaObjectPayload {
@@ -28,6 +31,7 @@ export interface CmsMediaObjectPayload {
   updatedAt: string;
   status: "ready" | "processing" | "orphaned" | "error";
   previewUrl: string;
+  variants: MediaObjectVariantPayload[];
   relatedArticle: {
     articleId: string;
     articleTitle: string;
@@ -35,10 +39,35 @@ export interface CmsMediaObjectPayload {
   } | null;
 }
 
+export interface MediaObjectVariantPayload {
+  variant: MediaWebpVariantKey;
+  width: number;
+  height: number | null;
+  sizeBytes: number;
+  status: "ready" | "missing" | "error";
+  url: string;
+  updatedAt: string | null;
+  errorMessage?: string;
+}
+
 export interface StoredMediaObject {
   id: string;
   objectKey: string;
   mimeType: string;
+}
+
+export interface StoredMediaVariant {
+  id: string;
+  mediaObjectId: string;
+  variant: MediaWebpVariantKey;
+  objectKey: string;
+  mimeType: string;
+  width: number;
+  height: number | null;
+  sizeBytes: number;
+  status: "ready" | "error";
+  errorMessage: string | null;
+  updatedAt: string;
 }
 
 export interface MediaUsageReference {
@@ -65,10 +94,37 @@ interface MediaObjectListRow {
   article_status: "draft" | "published" | "archived" | null;
 }
 
+interface MediaVariantListRow {
+  media_object_id: string;
+  variant: MediaWebpVariantKey;
+  object_key: string;
+  mime_type: string;
+  width: number | string;
+  height: number | string | null;
+  size_bytes: number | string;
+  status: "ready" | "error";
+  error_message: string | null;
+  updated_at: string;
+}
+
 interface StoredMediaObjectRow {
   id: string;
   object_key: string;
   mime_type: string;
+}
+
+interface StoredMediaVariantRow {
+  id: string;
+  media_object_id: string;
+  variant: MediaWebpVariantKey;
+  object_key: string;
+  mime_type: string;
+  width: number | string;
+  height: number | string | null;
+  size_bytes: number | string;
+  status: "ready" | "error";
+  error_message: string | null;
+  updated_at: string;
 }
 
 interface ArticleMediaReferenceRow {
@@ -84,6 +140,12 @@ export const MAX_IMAGE_UPLOAD_BYTES = 5 * 1024 * 1024;
 const IMAGE_MIME_PREFIX = "image/";
 const PUBLIC_MEDIA_BASE_PATH = "/api/cms/media";
 const REMOTE_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+const WEBP_VARIANT_QUALITY = 82;
+const WEBP_VARIANTS: Array<{ key: MediaWebpVariantKey; width: number }> = [
+  { key: "webp_1080", width: 1080 },
+  { key: "webp_720", width: 720 },
+];
+const WEBP_SOURCE_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
 const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
   "image/avif": "avif",
   "image/gif": "gif",
@@ -100,6 +162,14 @@ export function requireBucket(env: StorageEnv): R2Bucket {
   }
 
   return env.BUCKET;
+}
+
+export function requireImages(env: StorageEnv): ImagesBinding {
+  if (!env.IMAGES || typeof env.IMAGES.input !== "function") {
+    throw new ApiError(500, "IMAGES_NOT_CONFIGURED", 'Cloudflare Images binding "IMAGES" is not configured.');
+  }
+
+  return env.IMAGES;
 }
 
 export async function readUploadImageRequest(request: Request): Promise<UploadImageRequest> {
@@ -168,6 +238,7 @@ export async function uploadImageToStorage(options: {
   bucket: R2Bucket;
   db: D1Database;
   file: File;
+  images?: ImagesBinding;
   uploadedBy: string;
 }): Promise<UploadedImagePayload> {
   const article = options.articleId
@@ -186,8 +257,15 @@ export async function uploadImageToStorage(options: {
   const objectKey = await createUniqueObjectKey(options.db, options.bucket, options.file, article);
   const now = new Date().toISOString();
 
+  let originalImageInfo: ImageInfoResponse | null = null;
+  const fileBytes = await options.file.arrayBuffer();
+
+  if (options.images && options.file.type.startsWith(IMAGE_MIME_PREFIX)) {
+    originalImageInfo = await readImageInfo(options.images, fileBytes);
+  }
+
   try {
-    await options.bucket.put(objectKey, await options.file.arrayBuffer(), {
+    await options.bucket.put(objectKey, fileBytes, {
       httpMetadata: {
         contentType: options.file.type,
         cacheControl: "public, max-age=31536000, immutable",
@@ -218,7 +296,7 @@ export async function uploadImageToStorage(options: {
             uploaded_by,
             article_id,
             created_at
-          ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .bind(
@@ -227,16 +305,33 @@ export async function uploadImageToStorage(options: {
         "BUCKET",
         options.file.type,
         options.file.size,
+        getImageInfoWidth(originalImageInfo),
+        getImageInfoHeight(originalImageInfo),
         options.uploadedBy,
         article?.id ?? null,
         now,
       ),
   );
 
+  if (options.images && canGenerateWebpVariants(options.file.type)) {
+    await generateMediaWebpVariants({
+      bucket: options.bucket,
+      db: options.db,
+      images: options.images,
+      media: {
+        id,
+        objectKey,
+        mimeType: options.file.type,
+      },
+      sourceBytes: fileBytes,
+    });
+  }
+
   return {
     id,
     objectKey,
     url: buildMediaUrl(id, objectKey),
+    variants: await listMediaVariantPayloads(options.db, id),
   };
 }
 
@@ -321,6 +416,26 @@ export async function listMediaObjects(db: D1Database): Promise<CmsMediaObjectPa
       `,
     ),
   );
+  const variantRows = await queryAll<MediaVariantListRow>(
+    db.prepare(
+      `
+        SELECT
+          media_object_id,
+          variant,
+          object_key,
+          mime_type,
+          width,
+          height,
+          size_bytes,
+          status,
+          error_message,
+          updated_at
+        FROM media_object_variants
+        ORDER BY variant ASC
+      `,
+    ),
+  ).catch(() => []);
+  const variantsByMediaId = groupVariantRowsByMediaId(variantRows);
 
   return rows.map((row) => {
     const type = row.mime_type.startsWith(IMAGE_MIME_PREFIX) ? "image" : "attachment";
@@ -343,6 +458,7 @@ export async function listMediaObjects(db: D1Database): Promise<CmsMediaObjectPa
       updatedAt: row.created_at,
       status: resolveMediaStatus(type, relatedArticle?.articleStatus ?? null),
       previewUrl: buildMediaUrl(row.id, row.object_key),
+      variants: buildVariantPayloads(row.id, variantsByMediaId.get(row.id) ?? []),
       relatedArticle,
     } satisfies CmsMediaObjectPayload;
   });
@@ -407,6 +523,88 @@ export async function getStoredMediaObjectByPublicName(
     objectKey: row.object_key,
     mimeType: row.mime_type,
   };
+}
+
+export async function getStoredMediaVariant(
+  db: D1Database,
+  mediaObjectId: string,
+  variant: MediaWebpVariantKey,
+): Promise<StoredMediaVariant | null> {
+  const row = await queryFirst<StoredMediaVariantRow>(
+    db
+      .prepare(
+        `
+          SELECT
+            id,
+            media_object_id,
+            variant,
+            object_key,
+            mime_type,
+            width,
+            height,
+            size_bytes,
+            status,
+            error_message,
+            updated_at
+          FROM media_object_variants
+          WHERE media_object_id = ?
+            AND variant = ?
+          LIMIT 1
+        `,
+      )
+      .bind(mediaObjectId, variant),
+  ).catch(() => null);
+
+  if (!row) {
+    return null;
+  }
+
+  return mapStoredMediaVariant(row);
+}
+
+export function readMediaVariantParam(request: Request): MediaWebpVariantKey | null {
+  const url = new URL(request.url);
+  const rawVariant = url.searchParams.get("variant") ?? url.searchParams.get("size");
+
+  if (!rawVariant) {
+    return null;
+  }
+
+  const normalized = rawVariant.trim().toLowerCase();
+  if (normalized === "webp_1080" || normalized === "1080") {
+    return "webp_1080";
+  }
+  if (normalized === "webp_720" || normalized === "720") {
+    return "webp_720";
+  }
+
+  throw new ApiError(400, "VALIDATION_ERROR", "Unsupported media variant.");
+}
+
+export async function generateStoredMediaWebpVariants(options: {
+  bucket: R2Bucket;
+  db: D1Database;
+  images: ImagesBinding;
+  media: StoredMediaObject;
+}): Promise<MediaObjectVariantPayload[]> {
+  if (!canGenerateWebpVariants(options.media.mimeType)) {
+    throw new ApiError(400, "UNSUPPORTED_MEDIA_TYPE", "Only JPEG and PNG images can be converted to WebP.");
+  }
+
+  const source = await options.bucket.get(options.media.objectKey);
+  if (!source) {
+    throw new ApiError(404, "NOT_FOUND", "Stored object not found.");
+  }
+
+  await generateMediaWebpVariants({
+    bucket: options.bucket,
+    db: options.db,
+    images: options.images,
+    media: options.media,
+    sourceBytes: await source.arrayBuffer(),
+  });
+
+  return listMediaVariantPayloads(options.db, options.media.id);
 }
 
 export async function findMediaUsageReferences(
@@ -479,13 +677,21 @@ export async function deleteStoredMediaObject(options: {
     throw new ApiError(404, "NOT_FOUND", "Media object not found.");
   }
 
+  const variants = await listStoredMediaVariants(options.db, media.id);
+
   try {
     await options.bucket.delete(media.objectKey);
+    await Promise.all(variants.map((variant) => options.bucket.delete(variant.objectKey)));
   } catch (error) {
     console.error("R2 delete failed", error);
     throw new ApiError(502, "DELETE_FAILED", "Failed to delete object from storage.");
   }
 
+  await options.db
+    .prepare("DELETE FROM media_object_variants WHERE media_object_id = ?")
+    .bind(media.id)
+    .run()
+    .catch(() => undefined);
   await runStatement(options.db.prepare("DELETE FROM media_objects WHERE id = ?").bind(media.id));
 
   return media;
@@ -501,6 +707,10 @@ export function buildMediaUrl(id: string, objectKey?: string): string {
   return filename && !objectKey?.includes("/")
     ? buildNamedMediaUrl(id, filename)
     : `${PUBLIC_MEDIA_BASE_PATH}/${encodeURIComponent(id)}`;
+}
+
+export function buildMediaVariantUrl(id: string, variant: MediaWebpVariantKey, objectKey?: string): string {
+  return `${buildMediaUrl(id, objectKey)}?variant=${variant}`;
 }
 
 export function validateImageFile(file: File): void {
@@ -568,6 +778,303 @@ function resolveImageExtension(file: File): string {
   }
 
   return "bin";
+}
+
+function canGenerateWebpVariants(mimeType: string): boolean {
+  return WEBP_SOURCE_MIME_TYPES.has(normalizeMimeType(mimeType));
+}
+
+async function readImageInfo(images: ImagesBinding, bytes: ArrayBuffer): Promise<ImageInfoResponse | null> {
+  try {
+    return await images.info(arrayBufferToStream(bytes));
+  } catch (error) {
+    console.warn("Image metadata read failed", error);
+    return null;
+  }
+}
+
+async function generateMediaWebpVariants(options: {
+  bucket: R2Bucket;
+  db: D1Database;
+  images: ImagesBinding;
+  media: StoredMediaObject;
+  sourceBytes: ArrayBuffer;
+}): Promise<void> {
+  for (const variant of WEBP_VARIANTS) {
+    const objectKey = buildVariantObjectKey(options.media.id, variant.key);
+
+    try {
+      const result = await options.images
+        .input(arrayBufferToStream(options.sourceBytes))
+        .transform({
+          width: variant.width,
+          fit: "scale-down",
+        })
+        .output({
+          format: "image/webp",
+          quality: WEBP_VARIANT_QUALITY,
+        });
+      const response = result.response();
+      const bytes = await response.arrayBuffer();
+      const info = await readImageInfo(options.images, bytes);
+
+      await options.bucket.put(objectKey, bytes, {
+        httpMetadata: {
+          contentType: "image/webp",
+          cacheControl: "public, max-age=31536000, immutable",
+        },
+        customMetadata: {
+          mediaObjectId: options.media.id,
+          sourceObjectKey: options.media.objectKey,
+          variant: variant.key,
+        },
+      });
+
+      await upsertMediaVariant({
+        db: options.db,
+        mediaObjectId: options.media.id,
+        variant: variant.key,
+        objectKey,
+        width: getImageInfoWidth(info) ?? variant.width,
+        height: getImageInfoHeight(info),
+        sizeBytes: bytes.byteLength,
+      });
+    } catch (error) {
+      console.error("WebP variant generation failed", { mediaId: options.media.id, variant: variant.key, error });
+      await upsertMediaVariantError({
+        db: options.db,
+        mediaObjectId: options.media.id,
+        variant: variant.key,
+        objectKey,
+        width: variant.width,
+        errorMessage: error instanceof Error ? error.message : "Failed to generate WebP variant.",
+      });
+    }
+  }
+}
+
+async function upsertMediaVariant(options: {
+  db: D1Database;
+  mediaObjectId: string;
+  variant: MediaWebpVariantKey;
+  objectKey: string;
+  width: number;
+  height: number | null;
+  sizeBytes: number;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  await runStatement(
+    options.db
+      .prepare(
+        `
+          INSERT INTO media_object_variants (
+            id,
+            media_object_id,
+            variant,
+            object_key,
+            mime_type,
+            width,
+            height,
+            size_bytes,
+            status,
+            error_message,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, 'image/webp', ?, ?, ?, 'ready', NULL, ?, ?)
+          ON CONFLICT(media_object_id, variant) DO UPDATE SET
+            object_key = excluded.object_key,
+            mime_type = excluded.mime_type,
+            width = excluded.width,
+            height = excluded.height,
+            size_bytes = excluded.size_bytes,
+            status = 'ready',
+            error_message = NULL,
+            updated_at = excluded.updated_at
+        `,
+      )
+      .bind(
+        crypto.randomUUID(),
+        options.mediaObjectId,
+        options.variant,
+        options.objectKey,
+        options.width,
+        options.height,
+        options.sizeBytes,
+        now,
+        now,
+      ),
+  );
+}
+
+async function upsertMediaVariantError(options: {
+  db: D1Database;
+  mediaObjectId: string;
+  variant: MediaWebpVariantKey;
+  objectKey: string;
+  width: number;
+  errorMessage: string;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  await runStatement(
+    options.db
+      .prepare(
+        `
+          INSERT INTO media_object_variants (
+            id,
+            media_object_id,
+            variant,
+            object_key,
+            mime_type,
+            width,
+            height,
+            size_bytes,
+            status,
+            error_message,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, 'image/webp', ?, NULL, 0, 'error', ?, ?, ?)
+          ON CONFLICT(media_object_id, variant) DO UPDATE SET
+            object_key = excluded.object_key,
+            width = excluded.width,
+            status = 'error',
+            error_message = excluded.error_message,
+            updated_at = excluded.updated_at
+        `,
+      )
+      .bind(
+        crypto.randomUUID(),
+        options.mediaObjectId,
+        options.variant,
+        options.objectKey,
+        options.width,
+        options.errorMessage.slice(0, 500),
+        now,
+        now,
+      ),
+  );
+}
+
+async function listStoredMediaVariants(db: D1Database, mediaObjectId: string): Promise<StoredMediaVariant[]> {
+  const rows = await queryAll<StoredMediaVariantRow>(
+    db
+      .prepare(
+        `
+          SELECT
+            id,
+            media_object_id,
+            variant,
+            object_key,
+            mime_type,
+            width,
+            height,
+            size_bytes,
+            status,
+            error_message,
+            updated_at
+          FROM media_object_variants
+          WHERE media_object_id = ?
+        `,
+      )
+      .bind(mediaObjectId),
+  ).catch(() => []);
+
+  return rows.map(mapStoredMediaVariant);
+}
+
+async function listMediaVariantPayloads(db: D1Database, mediaObjectId: string): Promise<MediaObjectVariantPayload[]> {
+  return buildVariantPayloads(mediaObjectId, await listStoredMediaVariants(db, mediaObjectId));
+}
+
+function buildVariantPayloads(
+  mediaObjectId: string,
+  variants: Array<StoredMediaVariant | MediaVariantListRow>,
+): MediaObjectVariantPayload[] {
+  const rows = new Map<MediaWebpVariantKey, StoredMediaVariant | MediaVariantListRow>();
+  variants.forEach((variant) => rows.set(variant.variant, variant));
+
+  return WEBP_VARIANTS.map(({ key, width }) => {
+    const variant = rows.get(key);
+
+    if (!variant) {
+      return {
+        variant: key,
+        width,
+        height: null,
+        sizeBytes: 0,
+        status: "missing",
+        url: buildMediaVariantUrl(mediaObjectId, key),
+        updatedAt: null,
+      } satisfies MediaObjectVariantPayload;
+    }
+
+    return {
+      variant: key,
+      width: normalizeNumber(variant.width),
+      height: normalizeNullableNumber(variant.height),
+      sizeBytes: getVariantSizeBytes(variant),
+      status: variant.status,
+      url: buildMediaVariantUrl(mediaObjectId, key),
+      updatedAt: getVariantUpdatedAt(variant),
+      errorMessage: getVariantErrorMessage(variant) ?? undefined,
+    } satisfies MediaObjectVariantPayload;
+  });
+}
+
+function groupVariantRowsByMediaId(rows: MediaVariantListRow[]): Map<string, MediaVariantListRow[]> {
+  const grouped = new Map<string, MediaVariantListRow[]>();
+
+  rows.forEach((row) => {
+    const existing = grouped.get(row.media_object_id) ?? [];
+    existing.push(row);
+    grouped.set(row.media_object_id, existing);
+  });
+
+  return grouped;
+}
+
+function mapStoredMediaVariant(row: StoredMediaVariantRow): StoredMediaVariant {
+  return {
+    id: row.id,
+    mediaObjectId: row.media_object_id,
+    variant: row.variant,
+    objectKey: row.object_key,
+    mimeType: row.mime_type,
+    width: normalizeNumber(row.width),
+    height: normalizeNullableNumber(row.height),
+    sizeBytes: normalizeNumber(row.size_bytes),
+    status: row.status,
+    errorMessage: row.error_message,
+    updatedAt: row.updated_at,
+  };
+}
+
+function getVariantSizeBytes(variant: StoredMediaVariant | MediaVariantListRow): number {
+  return "size_bytes" in variant ? normalizeNumber(variant.size_bytes) : variant.sizeBytes;
+}
+
+function getVariantUpdatedAt(variant: StoredMediaVariant | MediaVariantListRow): string {
+  return "updated_at" in variant ? variant.updated_at : variant.updatedAt;
+}
+
+function getVariantErrorMessage(variant: StoredMediaVariant | MediaVariantListRow): string | null {
+  return "error_message" in variant ? variant.error_message : variant.errorMessage;
+}
+
+function buildVariantObjectKey(mediaObjectId: string, variant: MediaWebpVariantKey): string {
+  const width = variant === "webp_1080" ? 1080 : 720;
+  return `variants/${mediaObjectId}/${width}.webp`;
+}
+
+function arrayBufferToStream(bytes: ArrayBuffer): ReadableStream<Uint8Array> {
+  return new Response(bytes).body as ReadableStream<Uint8Array>;
+}
+
+function getImageInfoWidth(info: ImageInfoResponse | null): number | null {
+  return info && "width" in info ? info.width : null;
+}
+
+function getImageInfoHeight(info: ImageInfoResponse | null): number | null {
+  return info && "height" in info ? info.height : null;
 }
 
 function sanitizeFilename(filename: string, fallbackExtension: string): string {
@@ -704,6 +1211,15 @@ function resolveMediaStatus(
 function normalizeNumber(value: number | string): number {
   const nextValue = typeof value === "string" ? Number(value) : value;
   return Number.isFinite(nextValue) ? nextValue : 0;
+}
+
+function normalizeNullableNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const nextValue = normalizeNumber(value);
+  return Number.isFinite(nextValue) && nextValue > 0 ? nextValue : null;
 }
 
 function buildMediaUrlTerms(media: StoredMediaObject, siteUrl?: string): string[] {

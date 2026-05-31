@@ -99,6 +99,37 @@ function getListItems(block: ArticleContentBlock): ArticleListItem[] {
   return block.listItems?.length ? block.listItems : block.items?.map((item) => ({ text: item })) ?? [];
 }
 
+function getResponsiveImageSrcSet(src?: string): string | null {
+  if (!src || !isCmsMediaUrl(src)) {
+    return null;
+  }
+
+  return [
+    `${buildMediaVariantUrl(src, "webp_720")} 720w`,
+    `${buildMediaVariantUrl(src, "webp_1080")} 1080w`,
+  ].join(", ");
+}
+
+function isCmsMediaUrl(src: string): boolean {
+  try {
+    const url = new URL(src, window.location.origin);
+    return url.origin === window.location.origin && url.pathname.startsWith("/api/cms/media/");
+  } catch {
+    return src.startsWith("/api/cms/media/");
+  }
+}
+
+function buildMediaVariantUrl(src: string, variant: "webp_1080" | "webp_720"): string {
+  const url = new URL(src, window.location.origin);
+  url.searchParams.set("variant", variant);
+
+  if (/^https?:\/\//i.test(src)) {
+    return url.toString();
+  }
+
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 async function copyCode(block: ArticleContentBlock, index: number): Promise<void> {
   const code = block.code ?? "";
   const language = normalizeCodeLanguage(block.language);
@@ -212,7 +243,14 @@ function handleArticleCopy(event: ClipboardEvent): void {
           <code v-html="line.html || ' '"></code>
         </div>
       </div>
-      <img v-else-if="block.type === 'image'" :src="block.src" :alt="block.alt || 'article image'" />
+      <picture v-else-if="block.type === 'image'" class="article-image-wrap">
+        <source
+          v-if="getResponsiveImageSrcSet(block.src)"
+          :srcset="getResponsiveImageSrcSet(block.src) ?? undefined"
+          sizes="(max-width: 720px) 100vw, 720px"
+        />
+        <img :src="block.src" :alt="block.alt || 'article image'" loading="lazy" decoding="async" />
+      </picture>
       <ol v-else-if="block.type === 'list' && block.ordered">
         <li v-for="(item, itemIndex) in getListItems(block)" :key="itemIndex">
           <ArticleInlineContent :segments="item.segments" :fallback="item.text" />
@@ -264,7 +302,8 @@ function handleArticleCopy(event: ClipboardEvent): void {
 .article-code-block code { font-size: inherit; }
 .article-content blockquote { border-left: 3px solid var(--accent); padding-left: var(--space-3); color: var(--text-secondary); font-style: italic; }
 .article-content ul, .article-content ol { padding-left: var(--space-4); }
-.article-content img { width: 100%; border-radius: var(--radius-sm); margin-bottom: var(--space-4); border: 1px solid var(--border-subtle); }
+.article-image-wrap { display: block; margin-bottom: var(--space-4); }
+.article-content img { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
 .article-table-wrap { overflow-x: auto; margin-bottom: var(--space-4); }
 .article-content table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .article-content th, .article-content td { border: 1px solid var(--border-subtle); padding: 10px 12px; text-align: left; vertical-align: top; }
