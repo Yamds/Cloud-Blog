@@ -26,7 +26,7 @@ export const onRequestPost: PagesFunction<StorageEnv> = async ({ request, env })
       bucket,
       db,
       file,
-      images: env.IMAGES,
+      siteUrl: env.SITE_URL ?? new URL(request.url).origin,
       uploadedBy: user.id,
     });
 

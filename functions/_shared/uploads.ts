@@ -164,14 +164,6 @@ export function requireBucket(env: StorageEnv): R2Bucket {
   return env.BUCKET;
 }
 
-export function requireImages(env: StorageEnv): ImagesBinding {
-  if (!env.IMAGES || typeof env.IMAGES.input !== "function") {
-    throw new ApiError(500, "IMAGES_NOT_CONFIGURED", 'Cloudflare Images binding "IMAGES" is not configured.');
-  }
-
-  return env.IMAGES;
-}
-
 export async function readUploadImageRequest(request: Request): Promise<UploadImageRequest> {
   const contentType = request.headers.get("content-type") ?? "";
 
@@ -238,7 +230,7 @@ export async function uploadImageToStorage(options: {
   bucket: R2Bucket;
   db: D1Database;
   file: File;
-  images?: ImagesBinding;
+  siteUrl: string;
   uploadedBy: string;
 }): Promise<UploadedImagePayload> {
   const article = options.articleId
@@ -257,12 +249,7 @@ export async function uploadImageToStorage(options: {
   const objectKey = await createUniqueObjectKey(options.db, options.bucket, options.file, article);
   const now = new Date().toISOString();
 
-  let originalImageInfo: ImageInfoResponse | null = null;
   const fileBytes = await options.file.arrayBuffer();
-
-  if (options.images && options.file.type.startsWith(IMAGE_MIME_PREFIX)) {
-    originalImageInfo = await readImageInfo(options.images, fileBytes);
-  }
 
   try {
     await options.bucket.put(objectKey, fileBytes, {
@@ -296,7 +283,7 @@ export async function uploadImageToStorage(options: {
             uploaded_by,
             article_id,
             created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
         `,
       )
       .bind(
@@ -305,24 +292,22 @@ export async function uploadImageToStorage(options: {
         "BUCKET",
         options.file.type,
         options.file.size,
-        getImageInfoWidth(originalImageInfo),
-        getImageInfoHeight(originalImageInfo),
         options.uploadedBy,
         article?.id ?? null,
         now,
       ),
   );
 
-  if (options.images && canGenerateWebpVariants(options.file.type)) {
+  if (canGenerateWebpVariants(options.file.type)) {
     await generateMediaWebpVariants({
       bucket: options.bucket,
       db: options.db,
-      images: options.images,
       media: {
         id,
         objectKey,
         mimeType: options.file.type,
       },
+      siteUrl: options.siteUrl,
       sourceBytes: fileBytes,
     });
   }
@@ -584,8 +569,8 @@ export function readMediaVariantParam(request: Request): MediaWebpVariantKey | n
 export async function generateStoredMediaWebpVariants(options: {
   bucket: R2Bucket;
   db: D1Database;
-  images: ImagesBinding;
   media: StoredMediaObject;
+  siteUrl: string;
 }): Promise<MediaObjectVariantPayload[]> {
   if (!canGenerateWebpVariants(options.media.mimeType)) {
     throw new ApiError(400, "UNSUPPORTED_MEDIA_TYPE", "Only JPEG and PNG images can be converted to WebP.");
@@ -599,8 +584,8 @@ export async function generateStoredMediaWebpVariants(options: {
   await generateMediaWebpVariants({
     bucket: options.bucket,
     db: options.db,
-    images: options.images,
     media: options.media,
+    siteUrl: options.siteUrl,
     sourceBytes: await source.arrayBuffer(),
   });
 
@@ -784,39 +769,23 @@ function canGenerateWebpVariants(mimeType: string): boolean {
   return WEBP_SOURCE_MIME_TYPES.has(normalizeMimeType(mimeType));
 }
 
-async function readImageInfo(images: ImagesBinding, bytes: ArrayBuffer): Promise<ImageInfoResponse | null> {
-  try {
-    return await images.info(arrayBufferToStream(bytes));
-  } catch (error) {
-    console.warn("Image metadata read failed", error);
-    return null;
-  }
-}
-
 async function generateMediaWebpVariants(options: {
   bucket: R2Bucket;
   db: D1Database;
-  images: ImagesBinding;
   media: StoredMediaObject;
+  siteUrl: string;
   sourceBytes: ArrayBuffer;
 }): Promise<void> {
   for (const variant of WEBP_VARIANTS) {
     const objectKey = buildVariantObjectKey(options.media.id, variant.key);
 
     try {
-      const result = await options.images
-        .input(arrayBufferToStream(options.sourceBytes))
-        .transform({
-          width: variant.width,
-          fit: "scale-down",
-        })
-        .output({
-          format: "image/webp",
-          quality: WEBP_VARIANT_QUALITY,
-        });
-      const response = result.response();
-      const bytes = await response.arrayBuffer();
-      const info = await readImageInfo(options.images, bytes);
+      const bytes = await fetchWebpVariantBytes({
+        sourceBytes: options.sourceBytes,
+        sourceMimeType: options.media.mimeType,
+        sourceUrl: buildAbsoluteMediaUrl(options.siteUrl, options.media.id, options.media.objectKey),
+        width: variant.width,
+      });
 
       await options.bucket.put(objectKey, bytes, {
         httpMetadata: {
@@ -835,8 +804,8 @@ async function generateMediaWebpVariants(options: {
         mediaObjectId: options.media.id,
         variant: variant.key,
         objectKey,
-        width: getImageInfoWidth(info) ?? variant.width,
-        height: getImageInfoHeight(info),
+        width: variant.width,
+        height: null,
         sizeBytes: bytes.byteLength,
       });
     } catch (error) {
@@ -1065,16 +1034,47 @@ function buildVariantObjectKey(mediaObjectId: string, variant: MediaWebpVariantK
   return `variants/${mediaObjectId}/${width}.webp`;
 }
 
-function arrayBufferToStream(bytes: ArrayBuffer): ReadableStream<Uint8Array> {
-  return new Response(bytes).body as ReadableStream<Uint8Array>;
+async function fetchWebpVariantBytes(options: {
+  sourceBytes: ArrayBuffer;
+  sourceMimeType: string;
+  sourceUrl: string;
+  width: number;
+}): Promise<ArrayBuffer> {
+  void options.sourceBytes;
+  void options.sourceMimeType;
+  const response = await fetch(options.sourceUrl, {
+    cf: {
+      image: {
+        width: options.width,
+        fit: "scale-down",
+        format: "webp",
+      },
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Image transform failed with ${response.status}`);
+  }
+
+  return response.arrayBuffer();
 }
 
-function getImageInfoWidth(info: ImageInfoResponse | null): number | null {
-  return info && "width" in info ? info.width : null;
+function buildAbsoluteMediaUrl(siteUrl: string, id: string, objectKey?: string): string {
+  return new URL(buildMediaUrl(id, objectKey), normalizeSiteUrl(siteUrl)).toString();
 }
 
-function getImageInfoHeight(info: ImageInfoResponse | null): number | null {
-  return info && "height" in info ? info.height : null;
+function normalizeSiteUrl(siteUrl: string): string {
+  const trimmed = siteUrl.trim().replace(/\/+$/, "");
+
+  if (!trimmed) {
+    throw new ApiError(500, "SITE_URL_NOT_CONFIGURED", "SITE_URL is required to generate WebP variants.");
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    throw new ApiError(500, "SITE_URL_NOT_CONFIGURED", "SITE_URL must be an absolute http or https URL.");
+  }
+
+  return trimmed;
 }
 
 function sanitizeFilename(filename: string, fallbackExtension: string): string {

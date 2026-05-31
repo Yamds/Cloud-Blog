@@ -17,6 +17,3 @@ binding = "BUCKET"
 # Replace bucket names if your Cloudflare account uses different R2 bucket names.
 bucket_name = "cloud-blog-media"
 preview_bucket_name = "cloud-blog-media-preview"
-
-[images]
-binding = "IMAGES"

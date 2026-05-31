@@ -6,7 +6,6 @@ import {
   generateStoredMediaWebpVariants,
   getStoredMediaObject,
   requireBucket,
-  requireImages,
   type StorageEnv,
 } from "../../../../_shared/uploads";
 
@@ -34,8 +33,8 @@ export const onRequestPost: PagesFunction<StorageEnv> = async ({ request, env, p
     const variants = await generateStoredMediaWebpVariants({
       bucket: requireBucket(env),
       db,
-      images: requireImages(env),
       media,
+      siteUrl: env.SITE_URL ?? new URL(request.url).origin,
     });
 
     return json({
