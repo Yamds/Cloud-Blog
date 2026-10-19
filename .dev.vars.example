@@ -13,6 +13,15 @@ GITHUB_CLIENT_SECRET=
 # Keep this aligned with the local port you use for `wrangler pages dev`.
 SITE_URL=http://localhost:8788
 
+# Baidu URL push (optional, used after publishing an article).
+# Token comes from 百度搜索资源平台 -> 数据引入 -> 链接提交 -> API 推送.
+# Keep empty to disable push.
+BAIDU_PUSH_TOKEN=
+# Defaults to SITE_URL when empty.
+BAIDU_PUSH_SITE=
+# Defaults to https://data.zz.baidu.com/urls when empty.
+BAIDU_PUSH_ENDPOINT=
+
 # Session secret placeholder kept for config completeness.
 # Generate a long random string; it is used to hash session tokens.
 SESSION_SECRET=replace-with-a-long-random-secret

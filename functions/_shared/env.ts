@@ -5,6 +5,9 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
   SITE_URL?: string;
+  BAIDU_PUSH_TOKEN?: string;
+  BAIDU_PUSH_SITE?: string;
+  BAIDU_PUSH_ENDPOINT?: string;
   AI_BASE_URL?: string;
   AI_API_KEY?: string;
   AI_MODEL_SUMMARY?: string;
