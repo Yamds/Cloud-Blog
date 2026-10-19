@@ -587,7 +587,7 @@ function createFormatPrompt(input: AiTextInput): string {
     "bulletList 和 orderedList 的 content 必须包含 listItem；listItem 的 content 必须包含 paragraph 等块节点。",
     "codeBlock 的 content 只能包含 text 节点。",
     "table 的 content 只能包含 tableRow；tableRow 只能包含 tableHeader 或 tableCell；单元格 content 只能包含 paragraph、heading、bulletList、orderedList、blockquote、codeBlock、image 等块节点，优先简单 paragraph。",
-    "image 只允许 attrs.src、attrs.alt、attrs.title；src 只能是 http/https URL 或以 /api/cms/media 开头的站内路径。",
+    "image 只允许 attrs.src、attrs.alt、attrs.title、attrs.size、attrs.textAlign；src 只能是 http/https URL 或以 /api/cms/media 开头的站内路径，size 只能是 20、40、60、80、100，textAlign 只能是 left、center、right。",
     "link mark 的 href 只能是 http/https URL 或以 /api/cms/media 开头的站内路径。",
     "textStyle 只允许 attrs.color；highlight 只允许 attrs.color。颜色尽量使用简洁十六进制值，例如 #2563eb 或 #fde68a。",
     "不要输出任何 style、class、id、script、on*、dataset、html、markdown、自定义节点或自定义 attrs。",
@@ -1894,6 +1894,24 @@ function isSafeNode(value: unknown): value is TiptapNode | TiptapTextNode {
     if (imageAttrs.title !== undefined && typeof imageAttrs.title !== "string") {
       return false;
     }
+    if (
+      imageAttrs.size !== undefined &&
+      imageAttrs.size !== 20 &&
+      imageAttrs.size !== 40 &&
+      imageAttrs.size !== 60 &&
+      imageAttrs.size !== 80 &&
+      imageAttrs.size !== 100
+    ) {
+      return false;
+    }
+    if (
+      imageAttrs.textAlign !== undefined &&
+      imageAttrs.textAlign !== "left" &&
+      imageAttrs.textAlign !== "center" &&
+      imageAttrs.textAlign !== "right"
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -1935,6 +1953,18 @@ function normalizeTextAlignValue(value: unknown): "left" | "center" | "right" | 
   return value === "left" || value === "center" || value === "right" ? value : undefined;
 }
 
+function normalizeImageSizeValue(value: unknown): 20 | 40 | 60 | 80 | 100 | undefined {
+  const numericValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+
+  return numericValue === 20 ||
+    numericValue === 40 ||
+    numericValue === 60 ||
+    numericValue === 80 ||
+    numericValue === 100
+    ? numericValue
+    : undefined;
+}
+
 function normalizeImageNode(node: Record<string, unknown>): TiptapNode | null {
   const attrs = node.attrs && typeof node.attrs === "object" ? (node.attrs as Record<string, unknown>) : {};
   const src = normalizeSafeUrl(attrs.src);
@@ -1954,6 +1984,16 @@ function normalizeImageNode(node: Record<string, unknown>): TiptapNode | null {
     if (title) {
       imageAttrs.title = title;
     }
+  }
+
+  const size = normalizeImageSizeValue(attrs.size);
+  if (size) {
+    imageAttrs.size = size;
+  }
+
+  const textAlign = normalizeTextAlignValue(attrs.textAlign);
+  if (textAlign) {
+    imageAttrs.textAlign = textAlign;
   }
 
   return {

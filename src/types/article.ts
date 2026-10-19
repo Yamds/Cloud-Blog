@@ -32,6 +32,7 @@ export interface ArticleContentBlock {
   code?: string;
   alt?: string;
   src?: string;
+  imageSize?: 20 | 40 | 60 | 80 | 100;
   ordered?: boolean;
   items?: string[];
   listItems?: ArticleListItem[];

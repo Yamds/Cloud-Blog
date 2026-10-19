@@ -99,6 +99,30 @@ function getListItems(block: ArticleContentBlock): ArticleListItem[] {
   return block.listItems?.length ? block.listItems : block.items?.map((item) => ({ text: item })) ?? [];
 }
 
+function getImageSize(block: ArticleContentBlock): number {
+  return block.imageSize ?? 100;
+}
+
+function getImageBlockStyle(block: ArticleContentBlock): Record<string, string> {
+  const textAlign = block.textAlign ?? "center";
+  const margin =
+    textAlign === "left"
+      ? { marginLeft: "0", marginRight: "auto" }
+      : textAlign === "right"
+        ? { marginLeft: "auto", marginRight: "0" }
+        : { marginLeft: "auto", marginRight: "auto" };
+
+  return {
+    width: `${getImageSize(block)}%`,
+    ...margin,
+  };
+}
+
+function getImageSizes(block: ArticleContentBlock): string {
+  const size = getImageSize(block);
+  return `(max-width: 720px) ${size}vw, ${Math.round((720 * size) / 100)}px`;
+}
+
 function getResponsiveImageSrcSet(src?: string): string | null {
   if (!src || !isCmsMediaUrl(src)) {
     return null;
@@ -247,9 +271,15 @@ function handleArticleCopy(event: ClipboardEvent): void {
         <source
           v-if="getResponsiveImageSrcSet(block.src)"
           :srcset="getResponsiveImageSrcSet(block.src) ?? undefined"
-          sizes="(max-width: 720px) 100vw, 720px"
+          :sizes="getImageSizes(block)"
         />
-        <img :src="block.src" :alt="block.alt || 'article image'" loading="lazy" decoding="async" />
+        <img
+          :src="block.src"
+          :alt="block.alt || 'article image'"
+          loading="lazy"
+          decoding="async"
+          :style="getImageBlockStyle(block)"
+        />
       </picture>
       <ol v-else-if="block.type === 'list' && block.ordered">
         <li v-for="(item, itemIndex) in getListItems(block)" :key="itemIndex">
@@ -303,7 +333,7 @@ function handleArticleCopy(event: ClipboardEvent): void {
 .article-content blockquote { border-left: 3px solid var(--accent); padding-left: var(--space-3); color: var(--text-secondary); font-style: italic; }
 .article-content ul, .article-content ol { padding-left: var(--space-4); }
 .article-image-wrap { display: block; margin-bottom: var(--space-4); }
-.article-content img { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
+.article-content img { display: block; width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); }
 .article-table-wrap { overflow-x: auto; margin-bottom: var(--space-4); }
 .article-content table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .article-content th, .article-content td { border: 1px solid var(--border-subtle); padding: 10px 12px; text-align: left; vertical-align: top; }

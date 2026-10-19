@@ -121,21 +121,38 @@ let autosaveTimer: number | null = null;
 
 const CMS_MEDIA_PATH_PREFIX = "/api/cms/media";
 const STICKY_HEADER_EXTRA_GAP = 12;
+const IMAGE_SIZE_STEPS = [20, 40, 60, 80, 100] as const;
+const DEFAULT_IMAGE_SIZE = 100;
+const DEFAULT_IMAGE_ALIGN = "center";
+
+type ImageSizePercent = (typeof IMAGE_SIZE_STEPS)[number];
+type ImageTextAlign = "left" | "center" | "right";
 
 interface ImageNodeContext {
   src: string;
   alt: string;
   pos: number;
+  size: ImageSizePercent;
+  textAlign: ImageTextAlign;
 }
 
 interface HoveredImageContext extends ImageNodeContext {
   top: number;
   left: number;
   width: number;
+  handleTop: number;
+  handleLeft: number;
   canConvert: boolean;
 }
 
 const hoveredImage = ref<HoveredImageContext | null>(null);
+const imageResizing = ref(false);
+let imageResizeState: {
+  pos: number;
+  startX: number;
+  startSize: ImageSizePercent;
+  containerWidth: number;
+} | null = null;
 
 interface EditorSnapshotSource {
   getJSON: () => unknown;
@@ -170,6 +187,45 @@ const WavyUnderline = Mark.create({
   renderHTML({ HTMLAttributes }) {
     const className = [HTMLAttributes.class, "wavy"].filter(Boolean).join(" ");
     return ["span", { ...HTMLAttributes, class: className }, 0];
+  },
+});
+
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      size: {
+        default: DEFAULT_IMAGE_SIZE,
+        parseHTML: (element: HTMLElement) =>
+          normalizeImageSize(
+            element.getAttribute("data-size") ??
+              element.getAttribute("width") ??
+              element.style.width,
+          ),
+        renderHTML: (attributes: Record<string, unknown>) => {
+          const size = normalizeImageSize(attributes.size);
+          return {
+            "data-size": String(size),
+          };
+        },
+      },
+      textAlign: {
+        default: DEFAULT_IMAGE_ALIGN,
+        parseHTML: (element: HTMLElement) =>
+          normalizeImageAlign(
+            element.getAttribute("data-align") ??
+              element.style.textAlign ??
+              element.style.marginLeft,
+          ),
+        renderHTML: (attributes: Record<string, unknown>) => ({
+          "data-align": normalizeImageAlign(attributes.textAlign),
+          style: buildImageNodeStyle(
+            normalizeImageSize(attributes.size),
+            normalizeImageAlign(attributes.textAlign),
+          ),
+        }),
+      },
+    };
   },
 });
 
@@ -283,6 +339,7 @@ const editorText = computed(() =>
         deleteColumn: "Delete column",
         transferToMedia: "Transfer to media library",
         transferring: "Transferring...",
+        imageResizeHandle: "Drag to resize image",
         articleIcon: "Article icon",
         tags: "Tags",
         summaryZh: "Article Summary",
@@ -405,6 +462,7 @@ const editorText = computed(() =>
         deleteColumn: "删列",
         transferToMedia: "转存到媒体库",
         transferring: "转存中...",
+        imageResizeHandle: "拖动调整图片大小",
         articleIcon: "文章图标",
         tags: "标签",
         summaryZh: "文章简介",
@@ -535,7 +593,7 @@ const editor = useEditor({
       autolink: true,
       defaultProtocol: "https",
     }),
-  Image.configure({
+    ResizableImage.configure({
       allowBase64: false,
     }),
     Placeholder.configure({
@@ -644,8 +702,73 @@ const hoverConvertButtonStyle = computed(() => {
 
 const hoveredImageCanConvert = computed(() => Boolean(hoveredImage.value?.canConvert));
 
+const imageResizeHandleStyle = computed(() => {
+  const target = hoveredImage.value;
+
+  if (!target) {
+    return {};
+  }
+
+  return {
+    top: `${target.handleTop}px`,
+    left: `${target.handleLeft}px`,
+  };
+});
+
 function trackEditorRevision(): number {
   return editorRevision.value;
+}
+
+function normalizeImageSize(value: unknown): ImageSizePercent {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replace("%", "").trim())
+        : DEFAULT_IMAGE_SIZE;
+
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_IMAGE_SIZE;
+  }
+
+  return findNearestImageSize(numericValue);
+}
+
+function findNearestImageSize(value: number): ImageSizePercent {
+  return IMAGE_SIZE_STEPS.reduce<ImageSizePercent>((nearest, step) =>
+    Math.abs(step - value) < Math.abs(nearest - value) ? step : nearest,
+  DEFAULT_IMAGE_SIZE);
+}
+
+function normalizeImageAlign(value: unknown): ImageTextAlign {
+  if (value === "left" || value === "center" || value === "right") {
+    return value;
+  }
+
+  if (value === "auto") {
+    return "right";
+  }
+
+  return DEFAULT_IMAGE_ALIGN;
+}
+
+function buildImageNodeStyle(size: ImageSizePercent, align: ImageTextAlign): string {
+  const margin =
+    align === "left"
+      ? "margin-left: 0; margin-right: auto;"
+      : align === "right"
+        ? "margin-left: auto; margin-right: 0;"
+        : "margin-left: auto; margin-right: auto;";
+
+  return `width: ${size}%; ${margin}`;
+}
+
+function readImageSizeFromElement(imageElement: HTMLImageElement): ImageSizePercent {
+  return normalizeImageSize(imageElement.getAttribute("data-size") ?? imageElement.style.width);
+}
+
+function readImageAlignFromElement(imageElement: HTMLImageElement): ImageTextAlign {
+  return normalizeImageAlign(imageElement.getAttribute("data-align"));
 }
 
 const editorOutlineItems = computed(() => {
@@ -913,13 +1036,17 @@ function isToolbarActive(key: string): boolean {
   if (key === "bullet") return currentEditor.isActive("bulletList");
   if (key === "ordered") return currentEditor.isActive("orderedList");
   if (key === "link") return currentEditor.isActive("link");
-  if (key === "alignLeft") return currentEditor.isActive({ textAlign: "left" });
-  if (key === "alignCenter") return currentEditor.isActive({ textAlign: "center" });
-  if (key === "alignRight") return currentEditor.isActive({ textAlign: "right" });
+  if (key === "alignLeft") return isImageActiveWithAlign(currentEditor, "left") || currentEditor.isActive({ textAlign: "left" });
+  if (key === "alignCenter") return isImageActiveWithAlign(currentEditor, "center") || currentEditor.isActive({ textAlign: "center" });
+  if (key === "alignRight") return isImageActiveWithAlign(currentEditor, "right") || currentEditor.isActive({ textAlign: "right" });
   if (key === "table") return false;
   if (key === "image") return false;
 
   return currentEditor.isActive(key);
+}
+
+function isImageActiveWithAlign(currentEditor: NonNullable<typeof editor.value>, align: ImageTextAlign): boolean {
+  return currentEditor.isActive("image") && normalizeImageAlign(currentEditor.getAttributes("image").textAlign) === align;
 }
 
 function toggleToolbar(key: string): void {
@@ -945,10 +1072,27 @@ function toggleToolbar(key: string): void {
   if (key === "image") openImagePicker();
   if (key === "superscript") chain.toggleSuperscript().run();
   if (key === "subscript") chain.toggleSubscript().run();
-  if (key === "alignLeft") chain.setTextAlign("left").run();
-  if (key === "alignCenter") chain.setTextAlign("center").run();
-  if (key === "alignRight") chain.setTextAlign("right").run();
+  if (key === "alignLeft") setImageOrTextAlign("left");
+  if (key === "alignCenter") setImageOrTextAlign("center");
+  if (key === "alignRight") setImageOrTextAlign("right");
   if (key === "table") chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+}
+
+function setImageOrTextAlign(textAlign: ImageTextAlign): void {
+  const currentEditor = editor.value;
+
+  if (!currentEditor) {
+    return;
+  }
+
+  if (currentEditor.isActive("image")) {
+    currentEditor.chain().focus().updateAttributes("image", { textAlign }).run();
+    syncDraftFromEditor(currentEditor);
+    scheduleAutosave();
+    return;
+  }
+
+  currentEditor.chain().focus().setTextAlign(textAlign).run();
 }
 
 function setHeadingLevel(value: string): void {
@@ -1698,6 +1842,68 @@ function replaceImageAtPosition(pos: number, attrs: { src: string; alt?: string 
   currentEditor.chain().focus().setNodeSelection(pos).updateAttributes("image", attrs).run();
 }
 
+function startImageResize(event: MouseEvent, target: HoveredImageContext): void {
+  const wrap = editorContentWrap.value;
+
+  if (!wrap || imageOperationPending.value) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  imageResizeState = {
+    pos: target.pos,
+    startX: event.clientX,
+    startSize: target.size,
+    containerWidth: Math.max(wrap.clientWidth, 1),
+  };
+  imageResizing.value = true;
+  document.body.classList.add("is-image-resizing");
+  window.addEventListener("mousemove", handleImageResizeMove);
+  window.addEventListener("mouseup", stopImageResize);
+}
+
+function handleImageResizeMove(event: MouseEvent): void {
+  const currentEditor = editor.value;
+  const state = imageResizeState;
+
+  if (!currentEditor || !state) {
+    return;
+  }
+
+  const deltaPercent = ((event.clientX - state.startX) / state.containerWidth) * 100;
+  const nextSize = findNearestImageSize(state.startSize + deltaPercent);
+
+  currentEditor
+    .chain()
+    .focus()
+    .setNodeSelection(state.pos)
+    .updateAttributes("image", { size: nextSize })
+    .run();
+
+  if (hoveredImage.value?.pos === state.pos) {
+    hoveredImage.value = {
+      ...hoveredImage.value,
+      size: nextSize,
+    };
+  }
+}
+
+function stopImageResize(): void {
+  if (!imageResizeState) {
+    return;
+  }
+
+  window.removeEventListener("mousemove", handleImageResizeMove);
+  window.removeEventListener("mouseup", stopImageResize);
+  document.body.classList.remove("is-image-resizing");
+  imageResizeState = null;
+  imageResizing.value = false;
+  syncDraftFromEditor();
+  scheduleAutosave();
+}
+
 function handleEditorMouseMove(event: MouseEvent): void {
   const wrap = editorContentWrap.value;
   const currentEditor = editor.value;
@@ -1708,7 +1914,7 @@ function handleEditorMouseMove(event: MouseEvent): void {
 
   const target = event.target as HTMLElement | null;
 
-  if (target?.closest(".image-convert-float")) {
+  if (target?.closest(".image-convert-float") || target?.closest(".image-resize-handle") || imageResizing.value) {
     return;
   }
 
@@ -1738,25 +1944,34 @@ function handleEditorMouseMove(event: MouseEvent): void {
     return;
   }
 
-  const desiredWidth = availableWidth;
   const left = leftBoundary;
   const width = Math.max(rightBoundary - left, 80);
   const topBoundary = rect.top - wrapRect.top + inset;
   const bottomBoundary = rect.bottom - wrapRect.top - 36 - inset;
   const top = Math.max(Math.min(topBoundary, bottomBoundary), inset);
+  const handleLeft = Math.min(Math.max(rect.right - wrapRect.left - 8, inset), wrapRect.width - 18);
+  const handleTop = Math.max(rect.bottom - wrapRect.top - 8, inset);
 
   hoveredImage.value = {
     src,
     alt: imageElement.getAttribute("alt")?.trim() ?? "",
     pos: currentEditor.view.posAtDOM(imageElement, 0),
+    size: readImageSizeFromElement(imageElement),
+    textAlign: readImageAlignFromElement(imageElement),
     top,
     left,
     width,
+    handleTop,
+    handleLeft,
     canConvert: isExternalImageUrl(src),
   };
 }
 
 function clearHoveredExternalImage(): void {
+  if (imageResizing.value) {
+    return;
+  }
+
   hoveredImage.value = null;
 }
 
@@ -1824,6 +2039,7 @@ onBeforeUnmount(() => {
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
   }
+  stopImageResize();
   window.removeEventListener("resize", updateStickyMetrics);
   editor.value?.destroy();
 });
@@ -1975,6 +2191,7 @@ watch(
           </BubbleMenu>
           <div v-if="hoveredImage" class="image-convert-float" :style="hoverConvertButtonStyle">
             <span class="image-convert-chip image-convert-url" :title="hoveredImage.src">{{ hoveredImage.src }}</span>
+            <span class="image-convert-chip image-size-chip">{{ hoveredImage.size }}%</span>
             <button
               v-if="hoveredImageCanConvert"
               type="button"
@@ -1985,6 +2202,15 @@ watch(
               {{ imageConverting ? editorText.transferring : editorText.transferToMedia }}
             </button>
           </div>
+          <button
+            v-if="hoveredImage"
+            type="button"
+            class="image-resize-handle"
+            :style="imageResizeHandleStyle"
+            :title="editorText.imageResizeHandle"
+            :aria-label="editorText.imageResizeHandle"
+            @mousedown="startImageResize($event, hoveredImage)"
+          ></button>
           <EditorContent v-if="editor" :editor="editor" class="editor-content" :class="{ disabled: loading }" />
           <p v-if="aiMessage" class="ai-note">{{ aiMessage }}</p>
           <p v-if="aiError" class="ai-error">{{ aiError }}</p>
@@ -2264,6 +2490,17 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.image-size-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 42px;
+  padding: 0 10px;
+  color: var(--accent);
+  font-family: var(--font-heading);
+  font-size: 13px;
+}
 .image-convert-button {
   flex: 0 0 auto;
   padding: 0 12px;
@@ -2276,6 +2513,28 @@ watch(
   border-color: var(--border);
   background: var(--bg);
   color: var(--accent);
+}
+.image-resize-handle {
+  position: absolute;
+  z-index: 10;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, transparent 45%, color-mix(in oklch, var(--accent) 70%, var(--text-primary)) 46% 54%, transparent 55%),
+    var(--bg-elevated);
+  box-shadow: 0 6px 16px color-mix(in oklab, var(--text-primary) 16%, transparent);
+  cursor: nwse-resize;
+}
+.image-resize-handle:hover,
+.image-resize-handle:focus-visible {
+  border-color: var(--accent);
+}
+:global(.is-image-resizing) {
+  cursor: nwse-resize;
+  user-select: none;
 }
 .slug-input {
   display: block;
@@ -2429,6 +2688,12 @@ watch(
   display: block;
   max-width: 100%;
   border-radius: var(--radius-md);
+  cursor: default;
+  transition: width var(--transition-fast), margin var(--transition-fast);
+}
+.editor-content :deep(.tiptap-prosemirror img.ProseMirror-selectednode) {
+  outline: 2px solid color-mix(in oklch, var(--accent) 70%, transparent);
+  outline-offset: 4px;
 }
 .editor-content :deep(.tiptap-prosemirror mark) {
   border-radius: 3px;

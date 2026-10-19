@@ -393,6 +393,8 @@ function convertRichTextNode(node: RichTextNode): ArticleContentBlock[] {
               type: "image",
               src,
               alt: normalizeOptionalText(node.attrs?.alt),
+              textAlign: normalizeTextAlign(node.attrs?.textAlign),
+              imageSize: normalizeImageSize(node.attrs?.size),
             },
           ]
         : [];
@@ -647,6 +649,17 @@ function isArticleContentBlock(value: unknown): value is ArticleContentBlock {
     return false;
   }
 
+  if (
+    block.imageSize !== undefined &&
+    block.imageSize !== 20 &&
+    block.imageSize !== 40 &&
+    block.imageSize !== 60 &&
+    block.imageSize !== 80 &&
+    block.imageSize !== 100
+  ) {
+    return false;
+  }
+
   if (block.ordered !== undefined && typeof block.ordered !== "boolean") {
     return false;
   }
@@ -695,6 +708,18 @@ function isArticleContentBlock(value: unknown): value is ArticleContentBlock {
 
 function normalizeTextAlign(value: unknown): "left" | "center" | "right" | undefined {
   return value === "left" || value === "center" || value === "right" ? value : undefined;
+}
+
+function normalizeImageSize(value: unknown): 20 | 40 | 60 | 80 | 100 | undefined {
+  const numericValue = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+
+  return numericValue === 20 ||
+    numericValue === 40 ||
+    numericValue === 60 ||
+    numericValue === 80 ||
+    numericValue === 100
+    ? numericValue
+    : undefined;
 }
 
 function normalizeHeadingLevel(value: unknown): 1 | 2 | 3 | 4 | 5 | 6 {
