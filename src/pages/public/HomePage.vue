@@ -3,6 +3,12 @@ import { storeToRefs } from "pinia";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "@/i18n/useI18n";
 import { useLanguageStore } from "@/stores/language";
+import { getSiteSettings } from "@/api/settings";
+import {
+  applySeo,
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_NAME,
+} from "@/utils/seo";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleCard from "../../components/article/ArticleCard.vue";
 import IconifyIcon from "../../components/common/IconifyIcon.vue";
@@ -18,6 +24,8 @@ const isAutoScrolling = ref(false);
 const articles = ref<Article[]>([]);
 const isLoadingArticles = ref(true);
 const articlesLoadError = ref("");
+const siteName = ref(DEFAULT_SITE_NAME);
+const siteDescription = ref(DEFAULT_SITE_DESCRIPTION);
 
 const featuredArticles = computed(() => articles.value.slice(0, 4));
 
@@ -131,15 +139,41 @@ const loadArticles = async () => {
   }
 };
 
+const applyHomeSeo = () => {
+  applySeo({
+    title: siteName.value,
+    description: siteDescription.value,
+    canonicalPath: "/",
+    type: "website",
+    locale: locale.value,
+    siteName: siteName.value,
+  });
+};
+
+const loadSiteInfo = async () => {
+  try {
+    const settings = await getSiteSettings();
+    siteName.value = settings.siteName?.trim() || DEFAULT_SITE_NAME;
+    siteDescription.value = settings.siteDescription?.trim() || DEFAULT_SITE_DESCRIPTION;
+  } catch {
+    // Keep the default site information when settings are unavailable.
+  } finally {
+    applyHomeSeo();
+  }
+};
+
 onMounted(() => {
   motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   prefersReducedMotion.value = motionQuery.matches;
   motionQuery.addEventListener("change", handleMotionChange);
   window.addEventListener("wheel", handleWheel, { passive: false });
+  applyHomeSeo();
+  void loadSiteInfo();
   void loadArticles();
 });
 
 watch(locale, () => {
+  applyHomeSeo();
   void loadArticles();
 });
 
@@ -154,8 +188,8 @@ onBeforeUnmount(() => {
   <main class="home-page">
     <section ref="heroRef" class="hero">
       <div class="hero-copy">
-        <h1 class="hero-title">Yamds's Blog</h1>
-        <p class="hero-subtitle">thoughts, craft & code</p>
+        <h1 class="hero-title">{{ siteName }}</h1>
+        <p class="hero-subtitle">{{ siteDescription }}</p>
       </div>
       <button
         class="hero-scroll-hint"

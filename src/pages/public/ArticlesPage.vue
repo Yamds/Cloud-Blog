@@ -4,6 +4,12 @@ import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { useI18n } from "@/i18n/useI18n";
 import { useLanguageStore } from "@/stores/language";
+import { getSiteSettings } from "@/api/settings";
+import {
+  applySeo,
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_NAME,
+} from "@/utils/seo";
 import { getPublishedArticles } from "../../api/articles";
 import ArticleMasonryCard from "../../components/article/ArticleMasonryCard.vue";
 import type { Article } from "../../types/article";
@@ -15,6 +21,8 @@ const route = useRoute();
 const articles = ref<Article[]>([]);
 const isLoadingArticles = ref(true);
 const articlesLoadError = ref("");
+const siteName = ref(DEFAULT_SITE_NAME);
+const siteDescription = ref(DEFAULT_SITE_DESCRIPTION);
 
 const activeTag = computed(() => {
   const tag = route.params.tag;
@@ -42,6 +50,35 @@ const pageDescription = computed(() =>
     : "",
 );
 
+const applyListSeo = () => {
+  applySeo({
+    title: activeTag.value
+      ? `#${activeTag.value} - ${siteName.value}`
+      : `${t("articles.all")} - ${siteName.value}`,
+    description: activeTag.value
+      ? pageDescription.value || siteDescription.value
+      : siteDescription.value,
+    canonicalPath: activeTag.value
+      ? `/tags/${encodeURIComponent(activeTag.value)}`
+      : "/articles",
+    type: "website",
+    locale: locale.value,
+    siteName: siteName.value,
+  });
+};
+
+const loadSiteInfo = async () => {
+  try {
+    const settings = await getSiteSettings();
+    siteName.value = settings.siteName?.trim() || DEFAULT_SITE_NAME;
+    siteDescription.value = settings.siteDescription?.trim() || DEFAULT_SITE_DESCRIPTION;
+  } catch {
+    // Keep the default site information when settings are unavailable.
+  } finally {
+    applyListSeo();
+  }
+};
+
 const loadArticles = async () => {
   isLoadingArticles.value = true;
   articlesLoadError.value = "";
@@ -58,12 +95,17 @@ const loadArticles = async () => {
 };
 
 onMounted(() => {
+  applyListSeo();
+  void loadSiteInfo();
   void loadArticles();
 });
 
 watch(locale, () => {
+  applyListSeo();
   void loadArticles();
 });
+
+watch(activeTag, applyListSeo);
 </script>
 
 <template>

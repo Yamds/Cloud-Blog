@@ -20,6 +20,15 @@ import type { Article, ArticleComment } from "../../types/article";
 import { useAuthStore } from "@/stores/auth";
 import { useLanguageStore } from "@/stores/language";
 import { createArticleHeadingId, getArticleBlockText } from "@/utils/articleContent";
+import {
+  applyArticleJsonLd,
+  applySeo,
+  clearArticleJsonLd,
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_NAME,
+  resolveSeoImage,
+  truncateDescription,
+} from "@/utils/seo";
 
 const route = useRoute();
 const router = useRouter();
@@ -39,10 +48,11 @@ const articleLoadError = ref("");
 const commentsError = ref("");
 const commentsEnabled = ref(true);
 const siteOrigin = ref("");
+const siteName = ref(DEFAULT_SITE_NAME);
+const siteDescription = ref(DEFAULT_SITE_DESCRIPTION);
 const activeHeadingId = ref("");
 const lastRecordedPageViewSlug = ref("");
 const OUTLINE_SCROLL_EXTRA_GAP = 24;
-const SITE_TITLE = "Yamds's Blog";
 const slug = computed(() => String(route.params.slug ?? ""));
 const isPreview = computed(() => route.query.preview === "1");
 const currentArticleLanguage = computed(() => (article.value?.language === "en" ? "en" : "zh"));
@@ -58,6 +68,47 @@ const outlineItems = computed(() =>
     }))
     .filter((item) => item.type === "heading" && item.text),
 );
+
+const applyArticleSeo = () => {
+  if (!article.value) {
+    applySeo({
+      title: `Article not found - ${siteName.value}`,
+      description: siteDescription.value,
+      noindex: true,
+      locale: locale.value,
+      siteName: siteName.value,
+    });
+    return;
+  }
+
+  const current = article.value;
+  const firstParagraph = current.content.find(
+    (block) => block.type === "paragraph" && Boolean(block.text),
+  )?.text;
+  const imageBlock = current.content.find((block) => block.type === "image" && Boolean(block.src));
+  const canonicalPath = current.articleUrl || `/articles/${encodeURIComponent(current.slug)}`;
+  const image = resolveSeoImage(imageBlock?.src);
+
+  applySeo({
+    title: `${current.title} - ${siteName.value}`,
+    description: truncateDescription(current.summary || firstParagraph || current.title),
+    canonicalPath,
+    type: "article",
+    image,
+    locale: current.language === "en" ? "en" : "zh",
+    noindex: isPreview.value,
+    siteName: siteName.value,
+    publishedAt: current.publishedAt,
+    updatedAt: current.updatedAt,
+    authorName: current.authorName,
+  });
+
+  if (isPreview.value) {
+    clearArticleJsonLd();
+  } else {
+    applyArticleJsonLd(current, canonicalPath, image);
+  }
+};
 
 const getErrorMessage = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;
@@ -103,10 +154,14 @@ const loadArticle = async (targetSlug: string) => {
   try {
     const settings = await getSiteSettings().catch(() => null);
     commentsEnabled.value = settings?.commentsEnabled ?? true;
+    siteName.value = settings?.siteName?.trim() || DEFAULT_SITE_NAME;
+    siteDescription.value = settings?.siteDescription?.trim() || DEFAULT_SITE_DESCRIPTION;
     siteOrigin.value = window.location.origin;
     article.value = await getArticleBySlug(targetSlug, { preview: isPreview.value });
 
     if (article.value) {
+      applyArticleSeo();
+
       if (isPreview.value) {
         comments.value = [];
         commentsError.value = "";
@@ -119,12 +174,14 @@ const loadArticle = async (targetSlug: string) => {
       comments.value = [];
       commentsError.value = "";
       isLoadingComments.value = false;
+      applyArticleSeo();
     }
   } catch (error) {
     article.value = undefined;
     comments.value = [];
     commentsError.value = "";
     articleLoadError.value = getErrorMessage(error, t("article.loadError"));
+    applyArticleSeo();
   } finally {
     isLoadingArticle.value = false;
   }
@@ -274,7 +331,7 @@ watch(locale, (nextLocale) => {
 });
 
 watch(article, () => {
-  document.title = article.value ? `${article.value.title} - ${SITE_TITLE}` : SITE_TITLE;
+  applyArticleSeo();
   void nextTick(updateActiveOutline);
 });
 
@@ -284,7 +341,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("scroll", updateActiveOutline);
-  document.title = SITE_TITLE;
 });
 </script>
 
