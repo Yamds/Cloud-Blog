@@ -130,30 +130,11 @@ export interface CmsPublishInfo {
   lastSavedAt: string;
 }
 
-export interface CmsEditorDraft {
-  id: string;
-  slug?: string;
-  summary?: string;
-  title: string;
-  iconName: string;
-  tags: string[];
-  status: CmsArticleStatus;
-  content: string;
-  contentJson: Record<string, unknown>;
-  publishInfo: CmsPublishInfo;
-}
-
 export interface CmsLocalizedContentDraft {
   title: string;
   summary: string;
   content: string;
   contentJson: Record<string, unknown>;
-}
-
-export interface CmsAiAction {
-  key: "summary" | "polish" | "tags" | "format" | "translate";
-  label: string;
-  description: string;
 }
 
 export interface CmsStorageArticleLink {

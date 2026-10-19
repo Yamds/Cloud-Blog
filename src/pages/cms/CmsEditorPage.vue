@@ -2,8 +2,6 @@
 import Color from "@tiptap/extension-color";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Highlight from "@tiptap/extension-highlight";
-import { Mark } from "@tiptap/core";
-import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Subscript from "@tiptap/extension-subscript";
@@ -54,9 +52,18 @@ import AiPanel from "@/components/cms/AiPanel.vue";
 import CmsShell from "@/components/cms/CmsShell.vue";
 import EditorToolbar, { type ToolbarColor } from "@/components/cms/EditorToolbar.vue";
 import IconPicker from "@/components/cms/IconPicker.vue";
+import { ResizableImage, WavyUnderline } from "@/components/cms/editor/extensions";
+import {
+  findNearestImageSize,
+  normalizeImageAlign,
+  readImageAlignFromElement,
+  readImageSizeFromElement,
+  type ImageSizePercent,
+  type ImageTextAlign,
+} from "@/components/cms/editor/image";
 import PublishPanel from "@/components/cms/PublishPanel.vue";
 import TagEditor from "@/components/cms/TagEditor.vue";
-import { cmsAiActions, cmsEditorInitialDraft } from "@/data/cms";
+import { editorMessages } from "@/i18n/messages";
 import { useI18n } from "@/i18n/useI18n";
 import type {
   CmsArticleDetail,
@@ -121,12 +128,8 @@ let autosaveTimer: number | null = null;
 
 const CMS_MEDIA_PATH_PREFIX = "/api/cms/media";
 const STICKY_HEADER_EXTRA_GAP = 12;
-const IMAGE_SIZE_STEPS = [20, 40, 60, 80, 100] as const;
-const DEFAULT_IMAGE_SIZE = 100;
-const DEFAULT_IMAGE_ALIGN = "center";
+const DEFAULT_EDITOR_ICON = "ph:article";
 
-type ImageSizePercent = (typeof IMAGE_SIZE_STEPS)[number];
-type ImageTextAlign = "left" | "center" | "right";
 
 interface ImageNodeContext {
   src: string;
@@ -177,313 +180,13 @@ lowlight.register("shell", shell);
 lowlight.register("typescript", typescript);
 lowlight.register("xml", xml);
 
-const WavyUnderline = Mark.create({
-  name: "wavyUnderline",
-
-  parseHTML() {
-    return [{ tag: "span.wavy" }];
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    const className = [HTMLAttributes.class, "wavy"].filter(Boolean).join(" ");
-    return ["span", { ...HTMLAttributes, class: className }, 0];
-  },
-});
-
-const ResizableImage = Image.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      size: {
-        default: DEFAULT_IMAGE_SIZE,
-        parseHTML: (element: HTMLElement) =>
-          normalizeImageSize(
-            element.getAttribute("data-size") ??
-              element.getAttribute("width") ??
-              element.style.width,
-          ),
-        renderHTML: (attributes: Record<string, unknown>) => {
-          const size = normalizeImageSize(attributes.size);
-          return {
-            "data-size": String(size),
-          };
-        },
-      },
-      textAlign: {
-        default: DEFAULT_IMAGE_ALIGN,
-        parseHTML: (element: HTMLElement) =>
-          normalizeImageAlign(
-            element.getAttribute("data-align") ??
-              element.style.textAlign ??
-              element.style.marginLeft,
-          ),
-        renderHTML: (attributes: Record<string, unknown>) => ({
-          "data-align": normalizeImageAlign(attributes.textAlign),
-          style: buildImageNodeStyle(
-            normalizeImageSize(attributes.size),
-            normalizeImageAlign(attributes.textAlign),
-          ),
-        }),
-      },
-    };
-  },
-});
-
 const articleId = computed(() => {
   const value = route.params.id;
   return typeof value === "string" ? value : "new";
 });
 
 const isNewArticle = computed(() => articleId.value === "new" || !localizedDrafts.zh.articleId);
-const editorText = computed(() =>
-  locale.value === "en"
-    ? {
-        newTitle: "New Article",
-        editTitle: "Edit Article",
-        newSubtitle: "Start the draft first, then save and refine the details.",
-        editSubtitle: "Keep it light, save anytime, and decide when to publish.",
-        toolbar: {
-          bold: "Bold",
-          italic: "Italic",
-          wavyUnderline: "Wavy underline",
-          underline: "Underline",
-          strike: "Strikethrough",
-          quote: "Quote",
-          inlineCode: "Inline code",
-          code: "Code block",
-          bullet: "Bulleted list",
-          ordered: "Numbered list",
-          link: "Link",
-          image: "Image",
-          superscript: "Superscript",
-          subscript: "Subscript",
-          alignLeft: "Align left",
-          alignCenter: "Align center",
-          alignRight: "Align right",
-          table: "Add table",
-        },
-        colors: {
-          defaultText: "Default text",
-          accent: "Accent",
-          secondary: "Secondary text",
-          warm: "Warm",
-          green: "Green",
-          rose: "Rose",
-          noBackground: "No background",
-          softAccent: "Soft accent",
-          softWarm: "Soft warm",
-          softGreen: "Soft green",
-          softRose: "Soft rose",
-        },
-        autoPlainText: "Auto / plain text",
-        writingPlaceholder: "Start writing...",
-        loadArticleFailedWithMessage: "Article details failed to load. Keeping the local draft view: {message}",
-        loadArticleFailed: "Article details failed to load. Keeping the local draft view.",
-        restoreAutosaveConfirm: "Restore the autosave from {time}? Current edits will be overwritten.",
-        restoredAutosave: "Restored from autosave. Review it, then save manually.",
-        revisionsLoadFailed: "Failed to load revisions.",
-        saved: "Article saved.",
-        saveFailed: "Save failed. Please try again later.",
-        published: "Article published.",
-        publishFailed: "Publish failed. Please try again later.",
-        restoreRevisionConfirm: "Restore the revision from {time}? Current edits will be overwritten.",
-        restoredRevision: "Selected revision restored.",
-        restoreRevisionFailed: "Failed to restore revision. Please try again later.",
-        revisionReason: {
-          manual_save: "Save",
-          publish: "Publish",
-          archive: "Archive",
-          rollback: "Version restore",
-        },
-        previewNeedsSlug: "Save the article and generate a slug before previewing the public page.",
-        aiRunning: "AI is processing the current body...",
-        aiNeedsContent: "Write article body content before using AI actions.",
-        aiSummaryDone: "Summary candidate generated: {summary}",
-        aiTagsDone: "Added tags: {tags}",
-        aiPolishDone: "Replaced the body with the polished result.",
-        aiFormatDone: "Structured formatting generated and inserted into the editor.",
-        aiFailed: "AI action failed. Please try again later.",
-        aiTranslating: "AI is translating the English draft...",
-        aiNeedsChinese: "Complete the Chinese body before generating the English draft.",
-        aiTranslateDone: "English draft generated. Review it before saving or publishing.",
-        aiTranslateFailed: "AI translation failed. Please try again later.",
-        linkUrlPrompt: "Link URL",
-        imageUrlPrompt: "Image URL",
-        invalidImageUrl: "Enter an http/https image URL or an existing /api/cms/media address.",
-        imageLinkInserted: "Image link inserted.",
-        saveForImage: "Saving the article first so the image can be linked to it...",
-        saveForExternalImage: "Saving the article first so the external image can be linked to it...",
-        imageUploaded: "Image uploaded and inserted into the body.",
-        imageUploadFailed: "Image upload failed. Please try again later.",
-        imageUploadFallbackPrompt: "Image upload failed. Enter a URL manually instead",
-        manualImageInserted: "Inserted the manual image URL instead.",
-        imageConverting: "Transferring external image to the media library...",
-        imageConverted: "External image transferred to the media library.",
-        imageConvertFailed: "External image transfer failed. Please try again later.",
-        autosaveFound: "New autosave found",
-        autosaveFoundDetail: "Saved at {time}. Restore it, then save manually if it looks right.",
-        restoreAutosave: "Restore autosave",
-        preview: "Preview",
-        save: "Save",
-        saving: "Saving...",
-        publish: "Publish",
-        publishing: "Publishing...",
-        titlePlaceholderZh: "Article title...",
-        titlePlaceholderEn: "English title...",
-        body: "Body",
-        codeLanguage: "Code language",
-        tableEdit: "Table editing",
-        addRow: "Add row",
-        addColumn: "Add column",
-        deleteRow: "Delete row",
-        deleteColumn: "Delete column",
-        transferToMedia: "Transfer to media library",
-        transferring: "Transferring...",
-        imageResizeHandle: "Drag to resize image",
-        articleIcon: "Article icon",
-        tags: "Tags",
-        summaryZh: "Article Summary",
-        summaryEn: "English Summary",
-        summaryPlaceholderZh: "Write a short summary for the article list...",
-        summaryPlaceholderEn: "Write a short English summary...",
-        summaryHelpZh: "AI summaries are written here and synced to the home page and article list after saving.",
-        summaryHelpEn: "English summary is saved alongside the Chinese article.",
-        slugTitle: "Public URL",
-        slugAria: "Article public URL",
-        slugPlaceholder: "article-name",
-        slugHelp: "Leave it empty to generate a slug from the title.",
-        outline: "Outline",
-        revisions: "Versions",
-        refresh: "Refresh",
-        revisionNeedsSave: "Versions are recorded after the first save.",
-        revisionsLoading: "Loading versions...",
-        restore: "Restore",
-        revisionsEmpty: "No versions yet.",
-      }
-    : {
-        newTitle: "新建文章",
-        editTitle: "编辑文章",
-        newSubtitle: "先写下草稿，保存后再继续整理细节。",
-        editSubtitle: "保持轻量，随时保存，再决定何时发布。",
-        toolbar: {
-          bold: "加粗",
-          italic: "斜体",
-          wavyUnderline: "波浪下划线",
-          underline: "下划线",
-          strike: "删除线",
-          quote: "引用",
-          inlineCode: "行内代码",
-          code: "代码块",
-          bullet: "无序列表",
-          ordered: "有序列表",
-          link: "链接",
-          image: "图片",
-          superscript: "上角标",
-          subscript: "下角标",
-          alignLeft: "左对齐",
-          alignCenter: "居中对齐",
-          alignRight: "右对齐",
-          table: "添加表格",
-        },
-        colors: {
-          defaultText: "默认文字",
-          accent: "强调色",
-          secondary: "次级文字",
-          warm: "暖色",
-          green: "绿色",
-          rose: "玫瑰色",
-          noBackground: "无背景",
-          softAccent: "浅强调",
-          softWarm: "浅暖色",
-          softGreen: "浅绿色",
-          softRose: "浅玫瑰",
-        },
-        autoPlainText: "自动/纯文本",
-        writingPlaceholder: "开始写作...",
-        loadArticleFailedWithMessage: "文章详情加载失败，当前保留本地草稿视图：{message}",
-        loadArticleFailed: "文章详情加载失败，当前保留本地草稿视图。",
-        restoreAutosaveConfirm: "从 {time} 的自动保存恢复？当前编辑内容会被覆盖。",
-        restoredAutosave: "已从自动保存恢复，请确认后手动保存。",
-        revisionsLoadFailed: "版本记录加载失败。",
-        saved: "已保存当前文章。",
-        saveFailed: "保存失败，请稍后重试。",
-        published: "文章已发布。",
-        publishFailed: "发布失败，请稍后重试。",
-        restoreRevisionConfirm: "恢复到 {time} 的版本？当前编辑内容会被覆盖。",
-        restoredRevision: "已恢复所选版本。",
-        restoreRevisionFailed: "恢复版本失败，请稍后重试。",
-        revisionReason: {
-          manual_save: "保存",
-          publish: "发布",
-          archive: "归档",
-          rollback: "版本恢复",
-        },
-        previewNeedsSlug: "保存文章并生成 slug 后可预览公开页。",
-        aiRunning: "AI 正在处理当前正文...",
-        aiNeedsContent: "请先写入正文内容，再使用 AI 操作。",
-        aiSummaryDone: "已生成摘要候选：{summary}",
-        aiTagsDone: "已加入标签：{tags}",
-        aiPolishDone: "已用润色结果替换正文。",
-        aiFormatDone: "已生成结构化排版，并写入编辑器。",
-        aiFailed: "AI 操作失败，请稍后重试。",
-        aiTranslating: "AI 正在翻译英文稿...",
-        aiNeedsChinese: "请先完成中文正文，再生成英文稿。",
-        aiTranslateDone: "已生成英文稿，请检查后再保存或发布。",
-        aiTranslateFailed: "AI 翻译失败，请稍后重试。",
-        linkUrlPrompt: "链接 URL",
-        imageUrlPrompt: "图片 URL",
-        invalidImageUrl: "请输入 http/https 图片地址，或现有的 /api/cms/media 地址。",
-        imageLinkInserted: "已插入图片链接。",
-        saveForImage: "正在先保存文章，以便图片关联到当前文章...",
-        saveForExternalImage: "正在先保存文章，以便外链图片能关联到当前文章...",
-        imageUploaded: "图片已上传并插入正文。",
-        imageUploadFailed: "图片上传失败，请稍后重试。",
-        imageUploadFallbackPrompt: "图片上传失败，可改为手动输入 URL",
-        manualImageInserted: "已改为插入手动图片 URL。",
-        imageConverting: "正在转存外链图片到媒体库...",
-        imageConverted: "已将外链图片转存到媒体库。",
-        imageConvertFailed: "外链图片转存失败，请稍后重试。",
-        autosaveFound: "发现新的自动保存",
-        autosaveFoundDetail: "保存于 {time}，可以恢复后再手动保存。",
-        restoreAutosave: "从自动保存恢复",
-        preview: "预览",
-        save: "保存",
-        saving: "保存中...",
-        publish: "发布",
-        publishing: "发布中...",
-        titlePlaceholderZh: "文章标题...",
-        titlePlaceholderEn: "English title...",
-        body: "正文",
-        codeLanguage: "代码语言",
-        tableEdit: "表格编辑",
-        addRow: "加行",
-        addColumn: "加列",
-        deleteRow: "删行",
-        deleteColumn: "删列",
-        transferToMedia: "转存到媒体库",
-        transferring: "转存中...",
-        imageResizeHandle: "拖动调整图片大小",
-        articleIcon: "文章图标",
-        tags: "标签",
-        summaryZh: "文章简介",
-        summaryEn: "English Summary",
-        summaryPlaceholderZh: "写一段会出现在文章列表中的简介...",
-        summaryPlaceholderEn: "Write a short English summary...",
-        summaryHelpZh: "AI 生成摘要会直接填写到这里，保存后同步到首页和文章列表。",
-        summaryHelpEn: "English summary is saved alongside the Chinese article.",
-        slugTitle: "访问链接",
-        slugAria: "文章访问链接",
-        slugPlaceholder: "文章名",
-        slugHelp: "留空时会按标题自动生成 slug。",
-        outline: "目录",
-        revisions: "版本",
-        refresh: "刷新",
-        revisionNeedsSave: "首次保存后会记录版本。",
-        revisionsLoading: "正在读取版本...",
-        restore: "恢复",
-        revisionsEmpty: "暂无版本记录。",
-      },
-);
+const editorText = computed(() => editorMessages[locale.value]);
 
 function formatUiText(template: string, params: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
@@ -719,58 +422,6 @@ function trackEditorRevision(): number {
   return editorRevision.value;
 }
 
-function normalizeImageSize(value: unknown): ImageSizePercent {
-  const numericValue =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number(value.replace("%", "").trim())
-        : DEFAULT_IMAGE_SIZE;
-
-  if (!Number.isFinite(numericValue)) {
-    return DEFAULT_IMAGE_SIZE;
-  }
-
-  return findNearestImageSize(numericValue);
-}
-
-function findNearestImageSize(value: number): ImageSizePercent {
-  return IMAGE_SIZE_STEPS.reduce<ImageSizePercent>((nearest, step) =>
-    Math.abs(step - value) < Math.abs(nearest - value) ? step : nearest,
-  DEFAULT_IMAGE_SIZE);
-}
-
-function normalizeImageAlign(value: unknown): ImageTextAlign {
-  if (value === "left" || value === "center" || value === "right") {
-    return value;
-  }
-
-  if (value === "auto") {
-    return "right";
-  }
-
-  return DEFAULT_IMAGE_ALIGN;
-}
-
-function buildImageNodeStyle(size: ImageSizePercent, align: ImageTextAlign): string {
-  const margin =
-    align === "left"
-      ? "margin-left: 0; margin-right: auto;"
-      : align === "right"
-        ? "margin-left: auto; margin-right: 0;"
-        : "margin-left: auto; margin-right: auto;";
-
-  return `width: ${size}%; ${margin}`;
-}
-
-function readImageSizeFromElement(imageElement: HTMLImageElement): ImageSizePercent {
-  return normalizeImageSize(imageElement.getAttribute("data-size") ?? imageElement.style.width);
-}
-
-function readImageAlignFromElement(imageElement: HTMLImageElement): ImageTextAlign {
-  return normalizeImageAlign(imageElement.getAttribute("data-align"));
-}
-
 const editorOutlineItems = computed(() => {
   trackEditorRevision();
 
@@ -830,7 +481,7 @@ function createSharedDraft(): CmsEditorSharedDraft {
   return {
     sourceArticleId: "",
     translationGroupId: "",
-    iconName: cmsEditorInitialDraft.iconName,
+    iconName: DEFAULT_EDITOR_ICON,
     tags: [],
   };
 }
@@ -908,7 +559,7 @@ function applyWorkspace(
   draft.sourceArticleId = sourceArticle?.id ?? englishArticle?.translatedFromArticleId ?? "";
   draft.translationGroupId =
     sourceArticle?.translationGroupId ?? englishArticle?.translationGroupId ?? draft.sourceArticleId;
-  draft.iconName = sharedArticle?.iconName ?? cmsEditorInitialDraft.iconName;
+  draft.iconName = sharedArticle?.iconName ?? DEFAULT_EDITOR_ICON;
   draft.tags = sharedArticle ? [...sharedArticle.tags] : [];
   localizedDrafts.zh = createLocalizedDraftFromArticle(sourceArticle);
   localizedDrafts.en = createLocalizedDraftFromArticle(englishArticle);
@@ -2310,7 +1961,7 @@ watch(
           <p v-else class="panel-help">{{ editorText.revisionsEmpty }}</p>
         </section>
         <section class="panel">
-          <AiPanel :actions="cmsAiActions" :active-key="activeAiKey" @run="runAiAction" />
+          <AiPanel :active-key="activeAiKey" @run="runAiAction" />
           <p v-if="aiMessage" class="side-note">{{ aiMessage }}</p>
           <p v-if="aiError" class="side-error">{{ aiError }}</p>
         </section>

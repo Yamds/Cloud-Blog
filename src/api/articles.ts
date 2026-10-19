@@ -1,5 +1,4 @@
-import { getArticleBySlug as getMockArticleBySlug, mockArticles } from "../data/articles";
-import { ApiError, isApiError, requestJson } from "./http";
+import { ApiError, requestJson } from "./http";
 import type {
   Article,
   ArticleComment,
@@ -75,13 +74,6 @@ const parseJsonString = (value: string) => {
     return undefined;
   }
 };
-
-const isMockFallbackError = (error: unknown) =>
-  isApiError(error) &&
-  (error.code === "FETCH_FAILED" ||
-    error.code === "INVALID_JSON" ||
-    error.code === "NOT_FOUND" ||
-    error.status === 404);
 
 const normalizeString = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.trim() : fallback;
@@ -766,39 +758,20 @@ function selectArticlesForLocale(articles: Article[], language?: AppLocale): Art
 }
 
 export async function getPublishedArticles(language?: AppLocale): Promise<Article[]> {
-  try {
-    const payload = await requestJson<PublicArticlesResponse>("/api/articles");
-    const articles = unwrapArticleList(payload)
-      .map((item) => normalizeArticle(item))
-      .filter((item): item is Article => item !== null);
+  const payload = await requestJson<PublicArticlesResponse>("/api/articles");
+  const articles = unwrapArticleList(payload)
+    .map((item) => normalizeArticle(item))
+    .filter((item): item is Article => item !== null);
 
-    return selectArticlesForLocale(articles, language);
-  } catch (error) {
-    if (import.meta.env.DEV && isMockFallbackError(error)) {
-      return selectArticlesForLocale(mockArticles, language);
-    }
-
-    throw error;
-  }
+  return selectArticlesForLocale(articles, language);
 }
 
 export async function getArticleBySlug(
   slug: string,
   options: { preview?: boolean } = {},
 ): Promise<Article | undefined> {
-  const isPreview = options.preview === true;
-  const url = `/api/articles/${encodeURIComponent(slug)}${isPreview ? "?preview=1" : ""}`;
+  const url = `/api/articles/${encodeURIComponent(slug)}${options.preview ? "?preview=1" : ""}`;
+  const payload = await requestJson<PublicArticleResponse>(url);
 
-  try {
-    const payload = await requestJson<PublicArticleResponse>(url);
-    const article = normalizeArticle(unwrapArticle(payload));
-
-    return article ?? (isPreview ? undefined : getMockArticleBySlug(slug));
-  } catch (error) {
-    if (!isPreview && import.meta.env.DEV && isMockFallbackError(error)) {
-      return getMockArticleBySlug(slug);
-    }
-
-    throw error;
-  }
+  return normalizeArticle(unwrapArticle(payload)) ?? undefined;
 }
