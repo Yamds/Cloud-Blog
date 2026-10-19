@@ -1540,7 +1540,7 @@ function handlePreview(): void {
     return;
   }
 
-  const routeData = router.resolve(`/articles/${slug}`);
+  const routeData = router.resolve({ path: `/articles/${slug}`, query: { preview: "1" } });
   window.open(routeData.href, "_blank", "noopener,noreferrer");
 }
 

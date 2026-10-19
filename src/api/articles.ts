@@ -774,7 +774,7 @@ export async function getPublishedArticles(language?: AppLocale): Promise<Articl
 
     return selectArticlesForLocale(articles, language);
   } catch (error) {
-    if (isMockFallbackError(error)) {
+    if (import.meta.env.DEV && isMockFallbackError(error)) {
       return selectArticlesForLocale(mockArticles, language);
     }
 
@@ -782,14 +782,20 @@ export async function getPublishedArticles(language?: AppLocale): Promise<Articl
   }
 }
 
-export async function getArticleBySlug(slug: string): Promise<Article | undefined> {
+export async function getArticleBySlug(
+  slug: string,
+  options: { preview?: boolean } = {},
+): Promise<Article | undefined> {
+  const isPreview = options.preview === true;
+  const url = `/api/articles/${encodeURIComponent(slug)}${isPreview ? "?preview=1" : ""}`;
+
   try {
-    const payload = await requestJson<PublicArticleResponse>(`/api/articles/${encodeURIComponent(slug)}`);
+    const payload = await requestJson<PublicArticleResponse>(url);
     const article = normalizeArticle(unwrapArticle(payload));
 
-    return article ?? getMockArticleBySlug(slug);
+    return article ?? (isPreview ? undefined : getMockArticleBySlug(slug));
   } catch (error) {
-    if (isMockFallbackError(error)) {
+    if (!isPreview && import.meta.env.DEV && isMockFallbackError(error)) {
       return getMockArticleBySlug(slug);
     }
 

@@ -644,7 +644,7 @@ export async function restoreArticleRevision(
 }
 
 export function readCmsArticleInput(value: unknown): CmsArticleInput {
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ApiError(400, "VALIDATION_ERROR", "Request body must be a JSON object.");
   }
 

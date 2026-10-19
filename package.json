@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "run-p type-check type-check:functions \"build-only {@}\" --",
     "preview": "vite preview",
+    "test": "vitest run",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "type-check:functions": "tsc -p functions/tsconfig.json --pretty false",
@@ -62,6 +63,7 @@
     "typescript": "~6.0.0",
     "vite": "^8.0.8",
     "vite-plugin-vue-devtools": "^8.1.1",
+    "vitest": "^5.0.5",
     "vue-tsc": "^3.2.6",
     "wrangler": "^4.92.0"
   },

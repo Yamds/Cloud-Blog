@@ -434,8 +434,9 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 async function hashSessionToken(token: string, env: Env): Promise<string> {
+  const secret = requireEnv(env.SESSION_SECRET?.trim(), "SESSION_SECRET");
+
   try {
-    const secret = env.SESSION_SECRET?.trim() || "cloud-blog-local-session-secret";
     return await sha256Hex(`${secret}:${token}`);
   } catch (error) {
     console.error("Session token hashing failed", error);

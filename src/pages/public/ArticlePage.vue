@@ -44,6 +44,7 @@ const lastRecordedPageViewSlug = ref("");
 const OUTLINE_SCROLL_EXTRA_GAP = 24;
 const SITE_TITLE = "Yamds's Blog";
 const slug = computed(() => String(route.params.slug ?? ""));
+const isPreview = computed(() => route.query.preview === "1");
 const currentArticleLanguage = computed(() => (article.value?.language === "en" ? "en" : "zh"));
 const currentUserId = computed(() => user.value?.id ?? null);
 const currentUserName = computed(() => user.value?.githubLogin ?? "");
@@ -103,11 +104,17 @@ const loadArticle = async (targetSlug: string) => {
     const settings = await getSiteSettings().catch(() => null);
     commentsEnabled.value = settings?.commentsEnabled ?? true;
     siteOrigin.value = window.location.origin;
-    article.value = await getArticleBySlug(targetSlug);
+    article.value = await getArticleBySlug(targetSlug, { preview: isPreview.value });
 
     if (article.value) {
-      void recordArticlePageView(targetSlug);
-      await loadComments(targetSlug);
+      if (isPreview.value) {
+        comments.value = [];
+        commentsError.value = "";
+        isLoadingComments.value = false;
+      } else {
+        void recordArticlePageView(targetSlug);
+        await loadComments(targetSlug);
+      }
     } else {
       comments.value = [];
       commentsError.value = "";
@@ -259,7 +266,10 @@ watch(locale, (nextLocale) => {
   const targetSlug = getTranslationSlugForLocale(nextLocale);
 
   if (targetSlug && targetSlug !== slug.value) {
-    void router.replace(`/articles/${encodeURIComponent(targetSlug)}`);
+    void router.replace({
+      path: `/articles/${encodeURIComponent(targetSlug)}`,
+      query: route.query,
+    });
   }
 });
 
@@ -280,6 +290,10 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="article-page">
+    <p v-if="isPreview && article" class="preview-notice" role="status">
+      {{ t("article.previewNotice") }}
+    </p>
+
     <div v-if="article" class="article-wrapper" :class="{ 'without-outline': outlineItems.length === 0 }">
       <aside v-if="outlineItems.length" class="outline-sidebar">
         <div class="outline-title">
@@ -311,6 +325,7 @@ onBeforeUnmount(() => {
         <ArticleContent :content="article.content" />
         <ArticleCopyrightInfo :article="article" :site-origin="siteOrigin" />
         <CommentSection
+          v-if="!isPreview"
           :comments="comments"
           :is-logged-in="isAuthenticated"
           :auth-loading="isAuthLoading"
@@ -351,6 +366,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .article-page { padding: calc(64px + var(--space-8)) var(--space-4) var(--space-12); }
+.preview-notice { max-width: 1400px; margin: 0 auto var(--space-6); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); color: var(--text-secondary); font-size: 0.875rem; }
 .article-wrapper { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: 240px minmax(0, 720px); gap: var(--space-8); justify-content: center; align-items: start; }
 .article-wrapper.without-outline { grid-template-columns: minmax(0, 720px); }
 .outline-sidebar { position: sticky; top: calc(64px + var(--space-4)); align-self: start; }

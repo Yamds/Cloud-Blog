@@ -122,7 +122,8 @@ const ARTICLE_LIST_SQL = `
   ORDER BY a.published_at DESC, a.updated_at DESC
 `;
 
-const ARTICLE_DETAIL_SQL = `
+function buildArticleDetailSql(requirePublished: boolean): string {
+  return `
   SELECT
     a.id,
     a.slug,
@@ -148,8 +149,8 @@ const ARTICLE_DETAIL_SQL = `
     ON article_tag.article_id = a.id
   LEFT JOIN tags AS t
     ON t.id = article_tag.tag_id
-  WHERE a.status = ?
-    AND a.slug = ?
+  WHERE ${requirePublished ? "a.status = 'published' AND" : ""}
+    a.slug = ?
   GROUP BY
     a.id,
     a.slug,
@@ -169,6 +170,10 @@ const ARTICLE_DETAIL_SQL = `
     a.content_json
   LIMIT 1
 `;
+}
+
+const ARTICLE_DETAIL_SQL = buildArticleDetailSql(true);
+const ARTICLE_PREVIEW_SQL = buildArticleDetailSql(false);
 
 export async function getPublishedArticles(db: D1Database): Promise<Article[]> {
   const rows = await queryAll<ArticleRow>(db.prepare(ARTICLE_LIST_SQL).bind("published"));
@@ -180,7 +185,23 @@ export async function getPublishedArticleBySlug(
   db: D1Database,
   slug: string,
 ): Promise<Article | null> {
-  const row = await queryFirst<ArticleRow>(db.prepare(ARTICLE_DETAIL_SQL).bind("published", slug));
+  const row = await queryFirst<ArticleRow>(db.prepare(ARTICLE_DETAIL_SQL).bind(slug));
+  if (!row) {
+    return null;
+  }
+
+  const translationsMap = await loadPublishedTranslationsMap(db, [row]);
+  return mapArticleRow(row, true, translationsMap.get(row.id) ?? []);
+}
+
+/**
+ * 管理员预览用：包含 draft / archived，调用方必须先校验管理员权限。
+ */
+export async function getArticleBySlugIncludingDrafts(
+  db: D1Database,
+  slug: string,
+): Promise<Article | null> {
+  const row = await queryFirst<ArticleRow>(db.prepare(ARTICLE_PREVIEW_SQL).bind(slug));
   if (!row) {
     return null;
   }
@@ -303,7 +324,9 @@ export function parseContentJson(raw: string | null | undefined): ArticleContent
   }
 
   if (parsed && typeof parsed === "object" && "content" in parsed && Array.isArray(parsed.content)) {
-    if (parsed.content.every(isArticleContentBlock)) {
+    const isTiptapDoc = (parsed as { type?: unknown }).type === "doc";
+
+    if (!isTiptapDoc && parsed.content.every(isArticleContentBlock)) {
       return parsed.content;
     }
 
